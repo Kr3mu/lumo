@@ -1,9 +1,10 @@
 -- Strict mode: a table's columns are read from information_schema once, on its first call, and every call is
 -- checked against them before anything reaches MariaDB, so a typo or a wrong type fails with the column's name
--- instead of a generic 1054 or a silent conversion. Off with `set lumo_strict false` or { strict = false }.
+-- instead of a generic 1054 or a silent conversion. Off by default: `set lumo_strict true`, or { strict = true }
+-- per table. The editor types from types/schema.lua catch the same mistakes without any runtime cost.
 return function(Errors, Bridge, Sql)
     local Strict = {}
-    Strict.enabled = GetConvar('lumo_strict', 'true') ~= 'false'
+    Strict.enabled = GetConvar('lumo_strict', 'false') == 'true'
 
     local type, pairs, tostring = type, pairs, tostring
     local mathType, min = math.type, math.min
