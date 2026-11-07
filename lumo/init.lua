@@ -68,7 +68,7 @@ function Database.exec(sql, ...)
     return Query.send(RUN, sql, Sql.pack(...))
 end
 
--- Pins a checked-out connection to this thread until close. The driver also reclaims it after
+-- Pins a checked-out connection to this thread until close. The bridge also reclaims it after
 -- lumo_checkout_timeout_ms, or when this resource stops, so a thread that never resumes can't leak it.
 local Session = {}
 Session.__index = Session
@@ -148,7 +148,7 @@ function Database.async(fn, ...)
     return p
 end
 
----@return true once the driver has its first connection
+---@return true once the bridge has its first connection
 function Database.ready()
     return Bridge.call('ready')
 end

@@ -7,8 +7,8 @@
 </p>
 
 <p align="center">
-  A MariaDB driver for FiveM. Tables are Lua objects, everyday reads and writes need no SQL,<br>
-  and every query costs exactly one call into the driver.
+  A MariaDB bridge for FiveM. Tables are Lua objects, everyday reads and writes need no SQL,<br>
+  and every query costs exactly one call into the bridge.
 </p>
 
 ```lua
@@ -22,12 +22,12 @@ Players:increment(player.id, { money = 500 })
 ## Why Lumo
 
 Most of the time in a FiveM database call is not spent in the database. A small indexed `SELECT` takes MariaDB
-50–80 µs; getting the request from Lua into the driver and the answer back is what costs. Lumo is built around that:
+50–80 µs; getting the request from Lua into the bridge and the answer back is what costs. Lumo is built around that:
 
 - **Tables as objects.** `find`, `get`, `list`, `count`, `exists`, `insert`, `insertMany`, `update`, `updateWhere`,
   `increment`, `upsert`, `delete`, `deleteWhere`. SQL is generated once per call shape and cached.
 - **One call per query.** Building SQL, binding values and reading rows happen in Lua. Only the query crosses into
-  the driver.
+  the bridge.
 - **Answers inside the call.** A query that finishes within 2 ms is the call's return value; the Lua coroutine
   never yields. Slower ones continue on a worker thread and resume it.
 - **Transactions done right.** `Database.transaction(fn)` pins one connection to your function, commits on return and
@@ -74,7 +74,7 @@ local Database = require '@lumo'
 
 ### Inside a monorepo resource
 
-Copy the `lumo/` folder into your resource (for example `core/lib/lumo/`) and load the driver from your own manifest:
+Copy the `lumo/` folder into your resource (for example `core/lib/lumo/`) and load the bridge from your own manifest:
 
 ```lua
 -- core/fxmanifest.lua
@@ -90,7 +90,7 @@ server_scripts {
 add_unsafe_worker_permission core
 ```
 
-The module finds its own files and talks to the driver in the same resource.
+The module finds its own files and talks to the bridge in the same resource.
 
 ## Examples
 
@@ -173,7 +173,7 @@ if not ok and err.code == Database.Error.DUPLICATE_ENTRY then print('tag taken')
 
 From the benchmarks that led to Lumo (Legacy FXServer, MariaDB 12.3.3, same machine, median of 5 rounds):
 
-| | Lumo's driver | oxmysql 2.14.3 |
+| | Lumo's bridge | oxmysql 2.14.3 |
 |---|---|---|
 | oxmysql documentation benchmark, total | **517 ms** | 17.82 s |
 | 10,000 inserts in one transaction | **258 ms** | 14.10 s |
@@ -197,7 +197,7 @@ list `@lumo/init.lua` before `server.lua` and it tests the manifest-include path
 ## Building
 
 ```bash
-cd lumo && bun install && bun run build      # driver → lumo/dist (committed)
+cd lumo && bun install && bun run build      # bridge → lumo/dist (committed)
 cd docs && bun install && bun run build      # documentation site → docs/dist
 cd brand && python build_kit.py              # logo SVGs → brand/kit
 ```
@@ -206,7 +206,7 @@ cd brand && python build_kit.py              # logo SVGs → brand/kit
 
 | Folder | |
 |---|---|
-| `lumo/` | the resource: Node driver (`src/` → `dist/`) and Lua module (`init.lua`, `lua/`) |
+| `lumo/` | the resource: Node bridge (`src/` → `dist/`) and Lua module (`init.lua`, `lua/`) |
 | `test/` | end-to-end suite, setup SQL, example server config |
 | `docs/` | documentation site (Svelte 5 + Vite) |
 | `brand/` | logo kit and the scripts that build it; Outfit font under the SIL OFL |

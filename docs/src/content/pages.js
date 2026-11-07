@@ -22,15 +22,15 @@ export const groups = [
 export const pages = {
     introduction: {
         title: "Introduction",
-        lede: "Lumo is a MariaDB driver for FiveM servers. You work with tables as Lua objects, write no SQL for everyday reads and writes, and every query costs exactly one call into the driver.",
+        lede: "Lumo is a MariaDB bridge for FiveM servers. You work with tables as Lua objects, write no SQL for everyday reads and writes, and every query costs exactly one call into the bridge.",
         blocks: [
             { t: "note", kind: "info", s: "Lumo 0.1. Every behaviour on these pages is covered by an end-to-end suite that runs in FXServer against MariaDB, in both the standalone and the monorepo layout. Speed figures come from the benchmarks that led to Lumo." },
             { t: "code", lang: "lua", title: "server/players.lua", s: "local Database = require '@lumo'\nlocal Players = Database.table('players')\n\nAddEventHandler('playerJoining', function()\n    local player = Players:find({ license = GetPlayerIdentifierByType(source, 'license') })\n    print(player and player.money)\nend)" },
-            { t: "h2", id: "why", s: "Why another driver" },
-            { t: "p", s: "Most of the time in a FiveM database call is not spent in the database. A small SELECT takes MariaDB 50–80 µs; getting the request from Lua into the driver and the answer back is what costs. Lumo is built around that measurement." },
+            { t: "h2", id: "why", s: "Why another database bridge" },
+            { t: "p", s: "Most of the time in a FiveM database call is not spent in the database. A small SELECT takes MariaDB 50–80 µs; getting the request from Lua into the bridge and the answer back is what costs. Lumo is built around that measurement." },
             { t: "list", items: [
                 "**Tables as objects.** `Database.table('players')` gives you `find`, `get`, `list`, `insert`, `update`, `increment` and `delete`. The SQL is generated once per call shape and cached.",
-                "**One call per query.** Building the SQL, binding values and reading rows all happen in Lua, where they cost microseconds. Only the query itself crosses into the driver.",
+                "**One call per query.** Building the SQL, binding values and reading rows all happen in Lua, where they cost microseconds. Only the query itself crosses into the bridge.",
                 "**Answers inside the call.** A query that finishes within 2 ms comes back as the call's return value, so the Lua coroutine never yields.",
                 "**SQL when you need it.** Joins, aggregates and reports use `Database.all`, `Database.one`, `Database.value` and `Database.exec` with plain SQL.",
             ] },
@@ -47,17 +47,17 @@ export const pages = {
 
     installation: {
         title: "Installation",
-        lede: "Lumo is one folder in the monorepo: a server resource with its driver, and a Lua module that other resources load from their manifest or with `require`.",
+        lede: "Lumo is one folder in the monorepo: a server resource with its bridge, and a Lua module that other resources load from their manifest or with `require`.",
         blocks: [
             { t: "h2", id: "requirements", s: "Requirements" },
             { t: "table", head: ["Component", "Version", "Why"], rows: [
-                ["FXServer", "Legacy, Node 22 runtime", "the driver runs on Node with a worker thread"],
+                ["FXServer", "Legacy, Node 22 runtime", "the bridge runs on Node with a worker thread"],
                 ["MariaDB", "11.4 or newer", "multi-statement batches and the text protocol Lumo uses"],
                 ["ox_lib", "optional", "only if you load Lumo with `require`; a manifest include needs nothing"],
             ] },
             { t: "h2", id: "setup", s: "Set up" },
             { t: "steps", items: [
-                { title: "Add Lumo to the monorepo", s: "Lumo lives in the monorepo as `lumo/`: `init.lua` is the Lua module, the driver sits beside it. The server starts it like any other resource." },
+                { title: "Add Lumo to the monorepo", s: "Lumo lives in the monorepo as `lumo/`: `init.lua` is the Lua module, the bridge sits beside it. The server starts it like any other resource." },
                 { title: "Set the connection string and permissions", s: "Lumo reads `lumo_connection_string`. The worker thread needs `add_unsafe_worker_permission`.", lang: "cfg", code: "set lumo_connection_string \"mysql://lumo:secret@127.0.0.1/fivem\"\nadd_unsafe_worker_permission lumo\n\nensure lumo" },
                 { title: "Load it in your resource", s: "List `@lumo/init.lua` before your own scripts. FiveM runs it inside your resource, and every script after it sees `Database`. No other resource is needed.", lang: "lua", code: "-- fxmanifest.lua\nfx_version 'cerulean'\ngame 'gta5'\n\nserver_scripts {\n    '@lumo/init.lua',\n    'server/init.lua',\n}\n\ndependencies { 'lumo' }" },
                 { title: "Declare a table and use it", s: "Tables are usually declared at the top of a module and used from event handlers.", lang: "lua", code: "-- server/players.lua\nlocal Players = Database.table('players')\n\nCreateThread(function()\n    Database.ready()\n    print(('%d players in the database'):format(Players:count()))\nend)" },
@@ -68,11 +68,11 @@ export const pages = {
             { t: "code", lang: "lua", title: "with ox_lib", s: "-- fxmanifest.lua\nshared_script '@ox_lib/init.lua'\nserver_script 'server/init.lua'\ndependencies { 'ox_lib', 'lumo' }\n\n-- server/players.lua\nlocal Database = require '@lumo'" },
             { t: "note", kind: "info", s: "Both ways load the same file. It finds its own resource and folder from its chunk name, loads the rest of Lumo with `LoadResourceFile`, and never depends on `require` after that. A manifest include sets `Database` only in your resource: every resource has its own Lua state." },
             { t: "h2", id: "monorepo", s: "Inside a monorepo resource" },
-            { t: "p", s: "If your server is one big resource with everything inside (a `core` resource with modules under it), copy the `lumo` folder into it, for example to `core/lib/lumo/`, and load the driver from your own manifest. The Lua module finds its own files and talks to the driver in the same resource; nothing else changes." },
-            { t: "code", lang: "lua", title: "core/fxmanifest.lua", s: "fx_version 'cerulean'\ngame 'gta5'\nnode_version '22'\n\nserver_scripts {\n    'lib/lumo/dist/server.js',   -- the Lumo driver, running inside core\n    'lib/lumo/init.lua',         -- the Database module\n    'server/init.lua',\n}" },
+            { t: "p", s: "If your server is one big resource with everything inside (a `core` resource with modules under it), copy the `lumo` folder into it, for example to `core/lib/lumo/`, and load the bridge from your own manifest. The Lua module finds its own files and talks to the bridge in the same resource; nothing else changes." },
+            { t: "code", lang: "lua", title: "core/fxmanifest.lua", s: "fx_version 'cerulean'\ngame 'gta5'\nnode_version '22'\n\nserver_scripts {\n    'lib/lumo/dist/server.js',   -- the Lumo bridge, running inside core\n    'lib/lumo/init.lua',         -- the Database module\n    'server/init.lua',\n}" },
             { t: "code", lang: "cfg", title: "server.cfg", s: "set lumo_connection_string \"mysql://lumo:secret@127.0.0.1/fivem\"\nadd_unsafe_worker_permission core\nensure core" },
             { t: "code", lang: "lua", title: "core/server/players.lua", s: "local Players = Database.table('players')\n\n-- or, with ox_lib's require instead of the manifest line:\nlocal Database = require 'lib.lumo'   -- a path inside core, not '@lumo'" },
-            { t: "note", kind: "info", s: "`@lumo/init.lua` and `require '@lumo'` mean \"the lumo resource\"; `lib/lumo/init.lua` and `require 'lib.lumo'` mean \"this resource\". Either way every query is one call into the driver." },
+            { t: "note", kind: "info", s: "`@lumo/init.lua` and `require '@lumo'` mean \"the lumo resource\"; `lib/lumo/init.lua` and `require 'lib.lumo'` mean \"this resource\". Either way every query is one call into the bridge." },
         ],
     },
 
@@ -113,7 +113,7 @@ export const pages = {
                 ["Players:increment(7, { money = 500 })", "`UPDATE players SET money = money + ? WHERE id = ?`"],
                 ["Players:delete(7)", "`DELETE FROM players WHERE id = ?`"],
             ] },
-            { t: "p", s: "Each of these is one call into the driver. [Reading](#reading) and [Writing](#writing) cover the options; [Table](#api-table) lists every method." },
+            { t: "p", s: "Each of these is one call into the bridge. [Reading](#reading) and [Writing](#writing) cover the options; [Table](#api-table) lists every method." },
             { t: "h2", id: "cache", s: "Generated SQL is cached" },
             { t: "p", s: "The SQL for a call depends only on its shape: the table, the method and the column names you pass, never the values. Lumo builds it the first time a shape is used and caches it, so later calls do a few table lookups and no string building. In the syntax benchmark this costs about 10 µs over hand-written SQL on the C# prototype and is lost in the noise on Node." },
             { t: "h2", id: "safety", s: "Column names and values" },
@@ -123,7 +123,7 @@ export const pages = {
 
     reading: {
         title: "Reading",
-        lede: "`get`, `find`, `list`, `count` and `exists` read rows. Each is one call into the driver.",
+        lede: "`get`, `find`, `list`, `count` and `exists` read rows. Each is one call into the bridge.",
         blocks: [
             { t: "code", lang: "lua", s: "local player = Players:get(7)                                    -- by primary key\nlocal player = Players:find({ license = license })               -- first match or nil\nlocal police = Players:list({ where = { job = 'police' }, orderBy = 'name', limit = 50 })\nlocal online = Players:count({ online = true })\nlocal taken  = Crews:exists({ tag = 'NOVA' })" },
             { t: "h2", id: "where", s: "Filtering with where" },
@@ -219,9 +219,9 @@ export const pages = {
                 ["BAD_UPSERT", "`upsert` is called without `{ update = { ...columns } }`"],
                 ["READ_IN_BATCH", "a read runs inside `Database.batch`"],
                 ["SESSION_EXPIRED", "a session or transaction was held past `lumo_checkout_timeout_ms`"],
-                ["NO_SESSION", "the driver does not know the session, usually after it expired"],
-                ["NOT_STARTED", "the resource running the driver is not started"],
-                ["BAD_ARGUMENT", "the driver received an argument of the wrong type"],
+                ["NO_SESSION", "the bridge does not know the session, usually after it expired"],
+                ["NOT_STARTED", "the resource running the bridge is not started"],
+                ["BAD_ARGUMENT", "the bridge received an argument of the wrong type"],
             ] },
             { t: "note", kind: "tip", s: "`tostring(err)` gives a one-line summary, so an unhandled Lumo error still prints readably in the server console." },
         ],
@@ -236,7 +236,7 @@ export const pages = {
             { t: "h2", id: "when", s: "Transaction or batch" },
             { t: "p", s: "A transaction holds a connection while your Lua runs, which is what you need when a read decides the next write. When every write is known up front, use a [batch](#batches): it sends everything in one round trip and holds nothing." },
             { t: "table", head: ["", "Database.transaction(fn)", "Database.batch(fn)"], rows: [
-                ["Calls into the driver", "one per query, plus begin and commit", "1"],
+                ["Calls into the bridge", "one per query, plus begin and commit", "1"],
                 ["Holds a connection", "until fn returns", "no"],
                 ["Can read before writing", "yes", "no; reads raise inside a batch"],
                 ["Rollback", "fn raises, or the checkout timeout passes", "any write fails"],
@@ -255,11 +255,11 @@ export const pages = {
         title: "Batches",
         lede: "Inside `Database.batch`, writes are collected instead of sent. When the function returns, they go to MariaDB as one multi-statement query inside a transaction.",
         blocks: [
-            { t: "code", lang: "lua", title: "Save everyone on shutdown", s: "AddEventHandler('onResourceStop', function(name)\n    if name ~= GetCurrentResourceName() then return end\n\n    Database.batch(function()\n        for _, p in pairs(Players.online) do\n            Players:update(p.id, { money = p.money, kills = p.kills, deaths = p.deaths })\n        end\n    end) -- one call into the driver, one transaction\nend)" },
+            { t: "code", lang: "lua", title: "Save everyone on shutdown", s: "AddEventHandler('onResourceStop', function(name)\n    if name ~= GetCurrentResourceName() then return end\n\n    Database.batch(function()\n        for _, p in pairs(Players.online) do\n            Players:update(p.id, { money = p.money, kills = p.kills, deaths = p.deaths })\n        end\n    end) -- one call into the bridge, one transaction\nend)" },
             { t: "h2", id: "transfer", s: "A money transfer" },
             { t: "code", lang: "lua", s: "Database.batch(function()\n    Players:increment(buyerId, { money = -2500 })\n    Players:increment(sellerId, { money = 2500 })\n    Trades:insert({ buyer = buyerId, seller = sellerId, amount = 2500 })\nend)" },
             { t: "h2", id: "semantics", s: "How it runs" },
-            { t: "p", s: "MariaDB executes a multi-statement query in order and stops at the first failing statement. Lumo sends `COMMIT` only as the last statement of the last chunk, so a failure never commits; the driver then sends `ROLLBACK` and raises the error." },
+            { t: "p", s: "MariaDB executes a multi-statement query in order and stops at the first failing statement. Lumo sends `COMMIT` only as the last statement of the last chunk, so a failure never commits; the bridge then sends `ROLLBACK` and raises the error." },
             { t: "p", s: "Large batches are split into chunks of about 1 MB to stay under `max_allowed_packet`. 10,000 inserts take about 250 ms, the same as MariaDB running them from a console client." },
             { t: "note", kind: "warn", s: "Reads (`get`, `find`, `list`, `count`, `Database.one`, …) raise inside a batch, because their answer would not exist until the batch is sent. Read first, then batch the writes, or use a [transaction](#transactions)." },
         ],
@@ -306,7 +306,7 @@ export const pages = {
             { t: "api", name: "Database.batch", sig: "Database.batch(fn)", calls: 1, returns: "true", s: "Calls `fn()`, collecting the writes it makes, then sends them all in one transaction as one round trip. Reads raise inside a batch." },
             { t: "api", name: "Database.session", sig: "Database.session()", calls: 1, returns: "Session", s: "Pins a connection to the current thread until the session is closed. Use with `<close>`." },
             { t: "api", name: "Database.async", sig: "Database.async(fn, ...)", calls: 0, returns: "promise", s: "Runs `fn(...)` in a new thread and returns a promise for its result, for overlapping independent queries." },
-            { t: "api", name: "Database.ready", sig: "Database.ready()", calls: 1, returns: "true", s: "Waits until the driver has its first connection. Table calls already wait on their own; use this for startup checks." },
+            { t: "api", name: "Database.ready", sig: "Database.ready()", calls: 1, returns: "true", s: "Waits until the bridge has its first connection. Table calls already wait on their own; use this for startup checks." },
             { t: "api", name: "Database.null / Database.all_rows", sig: "Database.null, Database.all_rows", calls: 0, returns: "sentinel", s: "`Database.null` matches or writes NULL inside a where or row table. `Database.all_rows` is the explicit where for `updateWhere` and `deleteWhere` on every row." },
             { t: "api", name: "Database.Error", sig: "Database.Error.DUPLICATE_ENTRY", calls: 0, returns: "enum", s: "Error codes by name, to compare with `err.code`. MariaDB codes are numbers (`DUPLICATE_ENTRY = 1062`), Lumo's own are strings. See [Errors](#errors)." },
         ],
@@ -314,7 +314,7 @@ export const pages = {
 
     "api-table": {
         title: "Table",
-        lede: "Returned by `Database.table`. Every method is one call into the driver; the SQL is generated once per call shape and cached.",
+        lede: "Returned by `Database.table`. Every method is one call into the bridge; the SQL is generated once per call shape and cached.",
         blocks: [
             { t: "h2", id: "read", s: "Reading" },
             { t: "api", name: "get", sig: "Table:get(key, options?)", calls: 1, returns: "row | nil", s: "The row with this primary key. Options: `columns`, `lock`." },
@@ -357,7 +357,7 @@ export const pages = {
                 ["Database.null", "NULL (a plain nil cannot live in a Lua table)"],
                 ["array table, in where", "`IN (…)`"],
             ] },
-            { t: "note", kind: "info", s: "Values are written into the SQL text by the driver (client-side binding). In the sqlbench measurements this was faster than server-side prepared statements, which need an extra round trip to prepare." },
+            { t: "note", kind: "info", s: "Values are written into the SQL text by the bridge (client-side binding). In the sqlbench measurements this was faster than server-side prepared statements, which need an extra round trip to prepare." },
         ],
     },
 
@@ -367,16 +367,16 @@ export const pages = {
         blocks: [
             { t: "diagram", name: "bench" },
             { t: "h2", id: "syntax", s: "Repositories against raw SQL" },
-            { t: "p", s: "The same tasks on 10,000 indexed players, through the Lumo table API, on each driver prototype and on oxmysql (all three running the same Lua syntax layer). Median of 3 rounds of 1,500 reads or 300 writes." },
-            { t: "table", mono: [1, 2, 3], head: ["Task", "Node driver", "C# driver", "oxmysql 2.14.3"], rows: [
+            { t: "p", s: "The same tasks on 10,000 indexed players, through the Lumo table API, on each bridge prototype and on oxmysql (all three running the same Lua syntax layer). Median of 3 rounds of 1,500 reads or 300 writes." },
+            { t: "table", mono: [1, 2, 3], head: ["Task", "Node bridge", "C# bridge", "oxmysql 2.14.3"], rows: [
                 ["`Players:find({ license = l })`", "115 µs", "306 µs", "1.20 ms"],
                 ["`Players:list({ orderBy = 'kills DESC', limit = 10 })`", "126 µs", "337 µs", "1.18 ms"],
                 ["`Players:increment(id, { money = 1 })`", "1.04 ms", "1.35 ms", "1.97 ms"],
                 ["2-write `Database.batch`", "1.17 ms", "1.45 ms", "4.44 ms"],
             ] },
-            { t: "p", s: "Against hand-written SQL on the same driver, the table API cost +10 to +13 µs on the C# prototype and was inside the ±20 µs run-to-run noise on Node. Lumo uses the Node driver." },
+            { t: "p", s: "Against hand-written SQL on the same bridge, the table API cost +10 to +13 µs on the C# prototype and was inside the ±20 µs run-to-run noise on Node. Lumo uses the Node bridge." },
             { t: "h2", id: "steps", s: "The oxmysql documentation benchmark" },
-            { t: "table", mono: [1, 2], head: ["Step", "Lumo driver (Node)", "oxmysql 2.14.3"], rows: [
+            { t: "table", mono: [1, 2], head: ["Step", "Lumo bridge (Node)", "oxmysql 2.14.3"], rows: [
                 ["initialise test_table (4 statements)", "32.74 ms", "35.45 ms"],
                 ["small transactions (2 statements)", "1.23–1.57 ms", "5.70–6.03 ms"],
                 ["insert 10,000 users (one transaction)", "258.07 ms", "14.10 s"],
@@ -393,22 +393,22 @@ export const pages = {
                 ["MariaDB, small indexed SELECT", "~30–60 µs", "no"],
                 ["MariaDB, autocommit write", "1.0–1.4 ms", "no; it is the redo-log flush"],
             ] },
-            { t: "h2", id: "why-node", s: "Why the driver is Node, not C#" },
+            { t: "h2", id: "why-node", s: "Why the bridge runs on Node, not C#" },
             { t: "p", s: "Both prototypes reach the database floor on bulk work (Node 517 ms, C# 523 ms on the full benchmark). The difference is the call itself: an empty Lua → Node export costs about 40 µs, an empty Lua → C# export on mono about 150 µs. That is why every read above is about 2.6× faster on Node." },
         ],
     },
 
     architecture: {
         title: "Architecture",
-        lede: "Three layers, and one rule: exactly one call from Lua into the driver per query.",
+        lede: "Three layers, and one rule: exactly one call from Lua into the bridge per query.",
         blocks: [
             { t: "diagram", name: "layers" },
             { t: "h2", id: "lua", s: "Lua table layer" },
-            { t: "p", s: "`require '@lumo'` runs Lumo's Lua module inside each resource that loads it. Table objects turn method calls into cached SQL plus a value array; nothing crosses into the driver until the query runs. The layer caches the driver's raw export function references once, skipping the exports proxy (worth 23–31 µs per call)." },
-            { t: "h2", id: "bridge", s: "Bridge" },
+            { t: "p", s: "`require '@lumo'` runs Lumo's Lua module inside each resource that loads it. Table objects turn method calls into cached SQL plus a value array; nothing crosses into the bridge until the query runs. The layer caches the bridge's raw export function references once, skipping the exports proxy (worth 23–31 µs per call)." },
+            { t: "h2", id: "exports", s: "Exports" },
             { t: "p", s: "Three exports with flat arguments: `exec(shape, sql, params, session)`, `batch(sqls, index, params)` and `checkout` / `release`. A fast answer is the export's return value. A slow one returns a job id, and the answer arrives through one resumer function each resource registers at startup, so no Lua function crosses the bridge per call." },
-            { t: "code", lang: "ts", title: "bridge contract", s: "exec(shape: 0 | 1 | 2 | 3, sql: string, params?: unknown[], session?: number): unknown\n// returns the value, or [false, error], or [false, jobId] when it continues async\n\nbatch(sqls: string[], index: number[], params: unknown[][]): true | [false, Error]\ncheckout(): number\nrelease(session: number): void" },
-            { t: "h2", id: "driver", s: "Driver" },
+            { t: "code", lang: "ts", title: "exports", s: "exec(shape: 0 | 1 | 2 | 3, sql: string, params?: unknown[], session?: number): unknown\n// returns the value, or [false, error], or [false, jobId] when it continues async\n\nbatch(sqls: string[], index: number[], params: unknown[][]): true | [false, Error]\ncheckout(): number\nrelease(session: number): void" },
+            { t: "h2", id: "bridge", s: "Bridge" },
             { t: "list", items: [
                 "The Node main thread writes each request into a SharedArrayBuffer when the worker is spinning, and waits up to the inline budget for the reply.",
                 "The worker thread owns the connection pool, the handle table for sessions and transactions, and a dedicated connection for fast single statements.",
@@ -424,13 +424,13 @@ export const pages = {
         lede: "No single trick. Each step of a query lost a little less time, and every step was measured before it was kept. These are the ones that mattered, with the numbers they moved.",
         blocks: [
             { t: "h2", id: "idea", s: "The idea" },
-            { t: "p", s: "A small indexed query takes MariaDB 50–80 µs. Everything else in a FiveM database call is getting the request from Lua into the driver and the answer back. Lumo treats that path as the thing to optimise: make the crossing cheap, make it happen once, and never wait for a tick you don't need." },
+            { t: "p", s: "A small indexed query takes MariaDB 50–80 µs. Everything else in a FiveM database call is getting the request from Lua into the bridge and the answer back. Lumo treats that path as the thing to optimise: make the crossing cheap, make it happen once, and never wait for a tick you don't need." },
             { t: "diagram", name: "callpath" },
 
             { t: "h2", id: "inline", s: "1. The answer comes back inside the call" },
-            { t: "p", s: "Most drivers hand Lua a callback and resume the coroutine on a later tick. Lumo's main thread passes the request to its worker through a `SharedArrayBuffer` and waits for the reply with `Atomics.wait`, up to `lumo_inline_budget_ms` (2 ms). A fast query's result becomes the export's return value: no callback, no promise, and the Lua coroutine never yields." },
+            { t: "p", s: "Most database resources hand Lua a callback and resume the coroutine on a later tick. Lumo's main thread passes the request to its worker through a `SharedArrayBuffer` and waits for the reply with `Atomics.wait`, up to `lumo_inline_budget_ms` (2 ms). A fast query's result becomes the export's return value: no callback, no promise, and the Lua coroutine never yields." },
             { t: "table", mono: [1], head: ["Step", "Effect"], rows: [
-                ["Callback and resume on a later tick → answer inside the call", "small reads from ~1.0 ms to ~0.2 ms on the same driver"],
+                ["Callback and resume on a later tick → answer inside the call", "small reads from ~1.0 ms to ~0.2 ms on the same bridge"],
                 ["A slow query", "still continues async after the budget; the server thread is held at most 2 ms"],
             ] },
 
@@ -485,15 +485,15 @@ export const pages = {
 
     "vs-oxmysql": {
         title: "Lumo vs oxmysql",
-        lede: "How the two drivers are built, side by side. Every oxmysql statement on this page comes from its v2.14.3 source, linked where it is made.",
+        lede: "How Lumo and oxmysql are built, side by side. Every oxmysql statement on this page comes from its v2.14.3 source, linked where it is made.",
         blocks: [
             { t: "h2", id: "summary", s: "At a glance" },
             { t: "table", head: ["", "oxmysql 2.14.3", "Lumo 0.1"], rows: [
                 ["Connector", "`mysql2`", "`mariadb` (the MariaDB Node connector)"],
                 ["Where queries run", "the resource's Node main thread", "a worker thread that owns the pool; the main thread only hands requests over"],
                 ["Answer to Lua", "a Lua callback; `.await` wraps it in a promise and yields until the next tick", "the export's return value when the query finishes within 2 ms; a promise only when it doesn't"],
-                ["Calls into the driver", "through the exports proxy, with a callback function reference on every call", "cached raw function references, four flat arguments, no callback"],
-                ["Everyday queries", "`connection.query`: text protocol, values escaped by mysql2", "text protocol, values escaped by the driver"],
+                ["Calls into the bridge", "through the exports proxy, with a callback function reference on every call", "cached raw function references, four flat arguments, no callback"],
+                ["Everyday queries", "`connection.query`: text protocol, values escaped by mysql2", "text protocol, values escaped by the bridge"],
                 ["Transaction list", "`START TRANSACTION`, then one awaited round trip per statement", "one multi-statement query per ~1 MB chunk, `COMMIT` only in the last"],
                 ["Interactive transaction", "`MySQL.startTransaction(cb)`, fixed 30 s limit, `return false` rolls back", "`Database.transaction(fn)`: table calls join it; raising rolls back; configurable limit"],
                 ["Errors", "logged to the console; the caller gets `nil` or `false`", "raised as a Lua error table with `code`, `state`, `message`, `sql`"],
@@ -503,16 +503,16 @@ export const pages = {
 
             { t: "h2", id: "threading", s: "Where the work happens" },
             { t: "p", s: "oxmysql runs mysql2's pool on the resource's Node main thread ([pool.ts](https://github.com/overextended/oxmysql/blob/v2.14.3/src/database/pool.ts)). Parsing results, building rows and logging all happen there, interleaved with every other script tick in the resource." },
-            { t: "p", s: "Lumo's driver starts a worker thread that owns the connections and does the protocol work. The main thread writes each request into shared memory and, for a fast query, waits up to `lumo_inline_budget_ms` for the reply. A query that takes longer continues on the worker while the main thread moves on, so a slow query can hold the server thread for at most that budget." },
+            { t: "p", s: "Lumo's bridge starts a worker thread that owns the connections and does the protocol work. The main thread writes each request into shared memory and, for a fast query, waits up to `lumo_inline_budget_ms` for the reply. A query that takes longer continues on the worker while the main thread moves on, so a slow query can hold the server thread for at most that budget." },
 
             { t: "h2", id: "answer", s: "How the answer gets back to Lua" },
             { t: "p", s: "This is the biggest difference for small queries. In oxmysql, `MySQL.scalar.await` creates a promise, passes a Lua callback into the export and yields with `Citizen.Await`. The export schedules a resource tick before each query so the coroutine is resumed soon after the callback fires ([connection.ts](https://github.com/overextended/oxmysql/blob/v2.14.3/src/database/connection.ts), [scheduleTick.ts](https://github.com/overextended/oxmysql/blob/v2.14.3/src/utils/scheduleTick.ts)). Every query is a yield, a callback crossing back into Lua and a resume." },
-            { t: "p", s: "Lumo calls a cached raw function reference with flat arguments. When the worker answers within the budget, the value is the call's return value: no callback, no promise, and the coroutine never yields. Measured on the same server, small reads took 1.36–1.72 ms with oxmysql and 108–203 µs with Lumo's driver." },
+            { t: "p", s: "Lumo calls a cached raw function reference with flat arguments. When the worker answers within the budget, the value is the call's return value: no callback, no promise, and the coroutine never yields. Measured on the same server, small reads took 1.36–1.72 ms with oxmysql and 108–203 µs with Lumo's bridge." },
             { t: "diagram", name: "callpath" },
 
             { t: "h2", id: "transactions", s: "Transactions" },
             { t: "p", s: "oxmysql's `MySQL.transaction` begins a transaction and then awaits `connection.query` once per statement, in order ([rawTransaction.ts](https://github.com/overextended/oxmysql/blob/v2.14.3/src/database/rawTransaction.ts)). Each statement is a full round trip to MariaDB, which is why 10,000 inserts took 14.10 s in the benchmark." },
-            { t: "p", s: "Lumo sends the statements as one multi-statement query per chunk of about 1 MB, with `COMMIT` only at the end of the last chunk. MariaDB stops at the first failing statement and the driver then rolls back, so the semantics stay all-or-nothing. The same 10,000 inserts took 258 ms, the speed of MariaDB running them from a console client." },
+            { t: "p", s: "Lumo sends the statements as one multi-statement query per chunk of about 1 MB, with `COMMIT` only at the end of the last chunk. MariaDB stops at the first failing statement and the bridge then rolls back, so the semantics stay all-or-nothing. The same 10,000 inserts took 258 ms, the speed of MariaDB running them from a console client." },
             { t: "table", head: ["", "oxmysql", "Lumo"], rows: [
                 ["10,000 inserts in one transaction", "14.10 s", "258 ms"],
                 ["Round trips for N statements", "N + 2", "about one per MB of SQL"],
@@ -584,8 +584,8 @@ export const pages = {
             { t: "h3", s: "Can a slow query freeze the server?" },
             { t: "p", s: "Not for longer than `lumo_inline_budget_ms` (2 ms by default). After that the query continues on the worker and the server thread moves on." },
             { t: "h3", s: "Does Lumo work on FiveM Enhanced?" },
-            { t: "p", s: "The Lua library and the Node driver ran unchanged on Enhanced build 170 with Node 26 in testing, but Lumo has only been benchmarked on Legacy." },
-            { t: "h3", s: "Why not a C# driver?" },
+            { t: "p", s: "The Lua library and the Node bridge ran unchanged on Enhanced build 170 with Node 26 in testing, but Lumo has only been benchmarked on Legacy." },
+            { t: "h3", s: "Why not a C# bridge?" },
             { t: "p", s: "A C# prototype was just as fast on bulk work, but every call from Lua into mono costs about 150 µs against about 40 µs for Node." },
             { t: "h3", s: "Is it safe with player input?" },
             { t: "p", s: "Values are always bound, never pasted into SQL, and column names are checked against `[A-Za-z0-9_]`. Player input belongs in values and where tables, never in column names, `orderBy` or raw SQL text." },

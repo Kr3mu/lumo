@@ -18,14 +18,14 @@ Errors.codes = {
     DEADLOCK = 1213,              -- two transactions locked rows in opposite order; retry the transaction
 
     -- Lumo's own codes
-    NOT_STARTED = 'NOT_STARTED',          -- the resource running the driver is not started
-    BAD_ARGUMENT = 'BAD_ARGUMENT',        -- the driver received an argument of the wrong type
+    NOT_STARTED = 'NOT_STARTED',          -- the resource running the bridge is not started
+    BAD_ARGUMENT = 'BAD_ARGUMENT',        -- the bridge received an argument of the wrong type
     BAD_IDENTIFIER = 'BAD_IDENTIFIER',    -- a table or column name with characters other than [A-Za-z0-9_]
     BAD_ORDER_BY = 'BAD_ORDER_BY',        -- orderBy is not "column [ASC|DESC], ..."
     BAD_UPSERT = 'BAD_UPSERT',            -- upsert without { update = { ...columns } }
     EMPTY_WHERE = 'EMPTY_WHERE',          -- a where table with no columns, or updateWhere/deleteWhere without one
     READ_IN_BATCH = 'READ_IN_BATCH',      -- a read inside Database.batch
-    NO_SESSION = 'NO_SESSION',            -- a session id the driver does not know
+    NO_SESSION = 'NO_SESSION',            -- a session id the bridge does not know
     SESSION_EXPIRED = 'SESSION_EXPIRED',  -- a session or transaction held past lumo_checkout_timeout_ms
 }
 
@@ -41,7 +41,7 @@ function LumoError.__tostring(err)
     return ('[lumo] %s (%s)%s'):format(err.message or 'query failed', code, where)
 end
 
----@param err table { code, state, message, sql } as the driver returns it
+---@param err table { code, state, message, sql } as the bridge returns it
 ---@return table
 function Errors.wrap(err)
     err.resource = err.resource or GetCurrentResourceName()

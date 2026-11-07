@@ -3,9 +3,9 @@
     import DiagramFrame from "./DiagramFrame.svelte";
 
     const layers = [
-        { name: "Lua object layer", where: "require '@lumo' in each resource", chips: ["Database.table", "Table", "rows", "Database.transaction", "Database.batch", "SQL cache"] },
-        { name: "Bridge", where: "exports of the lumo resource", chips: ["exec", "batch", "checkout / release"] },
-        { name: "Driver", where: "inside the lumo resource", chips: ["Node main thread", "worker thread", "MariaDB pool"], joins: ["shared memory", ""] },
+        { name: "Lua object layer", where: "loaded into each resource", chips: ["Database.table", "Table", "rows", "Database.transaction", "Database.batch", "SQL cache"] },
+        { name: "Exports", where: "exports of the lumo resource", chips: ["exec", "batch", "checkout / release"] },
+        { name: "Bridge", where: "inside the lumo resource", chips: ["Node main thread", "worker thread", "MariaDB pool"], joins: ["shared memory", ""] },
     ];
 
     const order = layers.flatMap((layer, l) => layer.chips.map((_, c) => `${l}:${c}`));
