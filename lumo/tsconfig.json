@@ -1,1 +1,11 @@
-{ "compilerOptions": { "baseUrl": "src", "module": "esnext", "moduleResolution": "bundler", "target": "es2023", "strict": true } }
+{
+    "compilerOptions": {
+        "paths": { "*": ["./src/*"] },
+        "module": "esnext",
+        "moduleResolution": "bundler",
+        "target": "es2023",
+        "strict": true,
+        "skipLibCheck": true,
+        "types": ["@citizenfx/server", "node"]
+    }
+}
