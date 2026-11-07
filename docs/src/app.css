@@ -1,0 +1,157 @@
+/* Layout: top bar, then a three-column docs grid (section nav, reading column, on-this-page) that collapses to one column with a drawer nav on phones. */
+/* Direction "sodium light": Los Santos at night. Espresso-dark ground, off-white text, and one streetlight amber that marks
+   links, the active page and every bridge call. Dark-first; light mode is a cool concrete daylight with the amber deepened for contrast. */
+:root {
+    --bg: #191512;
+    --surface: #221d19;
+    --sunken: #2b2520;
+    --line: #3b332c;
+    --line-strong: #574b40;
+    --text: #f2eadd;
+    --muted: #c3b6a5;
+    --faint: #93877a;
+    --accent: #ffb238;
+    --accent-soft: #3f2e14;
+    --brass: #ffb238;
+    --brass-soft: #3f2e14;
+    --ok: #9bd585;
+    --ok-soft: #233320;
+    --warn: #ff9a5c;
+    --warn-soft: #3d2618;
+    --bad: #ff7b6c;
+    --bad-soft: #3e201c;
+    --code-bg: #131010;
+    --code-comment: #8f8273;
+    --code-keyword: #ffb238;
+    --code-string: #b9d98f;
+    --code-number: #ff9f6b;
+    --code-fn: #93c7ff;
+    color-scheme: dark;
+    --font-display: "Big Shoulders Display", "Arial Narrow", "Roboto Condensed", system-ui, sans-serif;
+    --font-body: "Atkinson Hyperlegible Next", "Atkinson Hyperlegible", system-ui, -apple-system, "Segoe UI", sans-serif;
+    --font-mono: "Atkinson Hyperlegible Mono", "JetBrains Mono", ui-monospace, "Cascadia Code", Consolas, monospace;
+
+    --space-1: 4px;
+    --space-2: 8px;
+    --space-3: 12px;
+    --space-4: 16px;
+    --space-5: 24px;
+    --space-6: 32px;
+    --space-7: 48px;
+    --space-8: 64px;
+
+    --radius-s: 3px;
+    --radius-m: 5px;
+    --radius-l: 7px;
+
+    --topbar-h: 60px;
+    --ease-out: cubic-bezier(0.2, 0.7, 0.2, 1);
+}
+
+@media (prefers-color-scheme: light) {
+    :root:not([data-theme="dark"]) {
+        --bg: #eef0f2;
+        --surface: #ffffff;
+        --sunken: #e3e6ea;
+        --line: #d0d4da;
+        --line-strong: #adb3bb;
+        --text: #1b1712;
+        --muted: #4d4740;
+        --faint: #777068;
+        --accent: #9c5300;
+        --accent-soft: #fbe8cc;
+        --brass: #9c5300;
+        --brass-soft: #fbe8cc;
+        --ok: #2c6e2f;
+        --ok-soft: #dcefdc;
+        --warn: #ad3f0c;
+        --warn-soft: #fbe3d5;
+        --bad: #b02a1d;
+        --bad-soft: #f8dcd8;
+        --code-bg: #e6e8ec;
+        --code-comment: #6b645c;
+        --code-keyword: #9c5300;
+        --code-string: #2e6b2e;
+        --code-number: #ad3f0c;
+        --code-fn: #1f5ea8;
+        color-scheme: light;
+    }
+}
+
+:root[data-theme="light"] {
+    --bg: #eef0f2;
+    --surface: #ffffff;
+    --sunken: #e3e6ea;
+    --line: #d0d4da;
+    --line-strong: #adb3bb;
+    --text: #1b1712;
+    --muted: #4d4740;
+    --faint: #777068;
+    --accent: #9c5300;
+    --accent-soft: #fbe8cc;
+    --brass: #9c5300;
+    --brass-soft: #fbe8cc;
+    --ok: #2c6e2f;
+    --ok-soft: #dcefdc;
+    --warn: #ad3f0c;
+    --warn-soft: #fbe3d5;
+    --bad: #b02a1d;
+    --bad-soft: #f8dcd8;
+    --code-bg: #e6e8ec;
+    --code-comment: #6b645c;
+    --code-keyword: #9c5300;
+    --code-string: #2e6b2e;
+    --code-number: #ad3f0c;
+    --code-fn: #1f5ea8;
+    color-scheme: light;
+}
+
+* {
+    outline: none !important;
+    box-sizing: border-box;
+}
+
+html {
+    scroll-padding-top: calc(var(--topbar-h) + 24px);
+}
+
+body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--text);
+    font: 400 17px/1.7 var(--font-body);
+    -webkit-font-smoothing: antialiased;
+}
+
+body::before {
+    content: "";
+    position: fixed;
+    inset: 0 0 auto;
+    height: env(safe-area-inset-top, 0px);
+    z-index: 30;
+    background: var(--surface);
+}
+
+a {
+    color: var(--accent);
+}
+
+code,
+kbd {
+    font-family: var(--font-mono);
+}
+
+::selection {
+    background: var(--accent-soft);
+}
+
+@media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+        animation-duration: 0.01ms !important;
+        animation-iteration-count: 1 !important;
+        transition-duration: 0.01ms !important;
+        scroll-behavior: auto !important;
+    }
+}

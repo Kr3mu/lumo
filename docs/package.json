@@ -1,0 +1,14 @@
+{
+  "name": "lumo-docs",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build && bun scripts/artifact.ts"
+  },
+  "devDependencies": {
+    "@sveltejs/vite-plugin-svelte": "5",
+    "svelte": "5",
+    "vite": "6"
+  }
+}
