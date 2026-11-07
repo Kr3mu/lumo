@@ -1,20 +1,27 @@
--- Lumo: the Database module, loaded with ox_lib's require. Two layouts work:
+-- Lumo: the Database module. FiveM has no built-in require; resources get one from ox_lib
+-- (`shared_script '@ox_lib/init.lua'`), which loads this file into the requiring resource. Two layouts work:
 --   its own resource:   local Database = require '@lumo'        -- driver runs in the lumo resource
 --   inside a monorepo:  local Database = require 'lib.lumo'     -- driver runs in this same resource
--- require passes the module name as `...`; it locates the sibling files and the resource hosting the driver.
-local base = ... or '@lumo'
-local host = base:match('^@([^%.]+)') or GetCurrentResourceName()
+-- The loader passes the module name as `...`. From it Lumo finds the resource and folder it lives in, loads its
+-- own parts with LoadResourceFile (so nothing past this file depends on require), and finds the driver's host.
+local name = ... or '@lumo'
+local resource, path = name:match('^@([^%.]+)%.?(.*)$')
+if not resource then resource, path = GetCurrentResourceName(), name end
+local folder = path ~= '' and (path:gsub('%.', '/') .. '/') or ''
 
-local function load(name)
-    return require(base .. '.lua.' .. name)
+local function part(file)
+    local file_path = folder .. 'lua/' .. file .. '.lua'
+    local source = LoadResourceFile(resource, file_path)
+    if not source then error(('lumo: cannot read %s from resource %s'):format(file_path, resource), 2) end
+    return assert(load(source, ('@@%s/%s'):format(resource, file_path), 't', _ENV))()
 end
 
-local Errors = load('errors')
-local Context = load('context')
-local Sql = load('sql')(Errors)
-local Bridge = load('bridge')(Errors, host)
-local Query = load('query')(Bridge, Context, Errors)
-local Table = load('table')(Errors, Query, Sql)
+local Errors = part('errors')
+local Context = part('context')
+local Sql = part('sql')(Errors)
+local Bridge = part('bridge')(Errors, resource)
+local Query = part('query')(Bridge, Context, Errors)
+local Table = part('table')(Errors, Query, Sql)
 
 local Database = {}
 
