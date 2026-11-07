@@ -1,31 +1,34 @@
 /* Layout: top bar, then a three-column docs grid (section nav, reading column, on-this-page) that collapses to one column with a drawer nav on phones. */
-/* Direction "sodium light": Los Santos at night. Espresso-dark ground, off-white text, and one streetlight amber that marks
-   links, the active page and every bridge call. Dark-first; light mode is a cool concrete daylight with the amber deepened for contrast. */
+/* Direction "firefly light": a cool night-navy ground (brand Night and Navy), ice-tinted text, and one light-blue glow that marks
+   links, the active page and every bridge call, like the firefly's tail. Dark-first; light mode is a pale ice daylight with the blue deepened for contrast. */
 :root {
-    --bg: #191512;
-    --surface: #221d19;
-    --sunken: #2b2520;
-    --line: #3b332c;
-    --line-strong: #574b40;
-    --text: #f2eadd;
-    --muted: #c3b6a5;
-    --faint: #93877a;
-    --accent: #ffb238;
-    --accent-soft: #3f2e14;
-    --brass: #ffb238;
-    --brass-soft: #3f2e14;
+    --bg: #0d1b26;
+    --surface: #12222f;
+    --sunken: #172a39;
+    --line: #22394b;
+    --line-strong: #34526a;
+    --text: #e6f1f9;
+    --muted: #a9bfcf;
+    --faint: #7d93a5;
+    --accent: #5cc8ff;
+    --accent-soft: #12304a;
+    --brass: #5cc8ff;
+    --brass-soft: #12304a;
     --ok: #9bd585;
     --ok-soft: #233320;
     --warn: #ff9a5c;
     --warn-soft: #3d2618;
     --bad: #ff7b6c;
     --bad-soft: #3e201c;
-    --code-bg: #131010;
-    --code-comment: #8f8273;
-    --code-keyword: #ffb238;
+    --code-bg: #09141c;
+    --code-comment: #7d8fa0;
+    --code-keyword: #5cc8ff;
     --code-string: #b9d98f;
-    --code-number: #ff9f6b;
-    --code-fn: #93c7ff;
+    --code-number: #7fe0d0;
+    --code-fn: #a9b8ff;
+    --logo-halo: #16405e;
+    --logo-wing: #4d6b82;
+    --logo-body: #cfe6f5;
     color-scheme: dark;
     --font-display: "Big Shoulders Display", "Arial Narrow", "Roboto Condensed", system-ui, sans-serif;
     --font-body: "Atkinson Hyperlegible Next", "Atkinson Hyperlegible", system-ui, -apple-system, "Segoe UI", sans-serif;
@@ -50,59 +53,65 @@
 
 @media (prefers-color-scheme: light) {
     :root:not([data-theme="dark"]) {
-        --bg: #eef0f2;
+        --bg: #eef3f7;
         --surface: #ffffff;
-        --sunken: #e3e6ea;
-        --line: #d0d4da;
-        --line-strong: #adb3bb;
-        --text: #1b1712;
-        --muted: #4d4740;
-        --faint: #777068;
-        --accent: #9c5300;
-        --accent-soft: #fbe8cc;
-        --brass: #9c5300;
-        --brass-soft: #fbe8cc;
+        --sunken: #e2e9ef;
+        --line: #cdd7df;
+        --line-strong: #a7b4c0;
+        --text: #0d1b26;
+        --muted: #3d5163;
+        --faint: #5a6d7c;
+        --accent: #0a659a;
+        --accent-soft: #dceffa;
+        --brass: #0a659a;
+        --brass-soft: #dceffa;
         --ok: #2c6e2f;
         --ok-soft: #dcefdc;
         --warn: #ad3f0c;
         --warn-soft: #fbe3d5;
         --bad: #b02a1d;
         --bad-soft: #f8dcd8;
-        --code-bg: #e6e8ec;
-        --code-comment: #6b645c;
-        --code-keyword: #9c5300;
+        --code-bg: #e4ebf1;
+        --code-comment: #56656f;
+        --code-keyword: #0a659a;
         --code-string: #2e6b2e;
-        --code-number: #ad3f0c;
-        --code-fn: #1f5ea8;
+        --code-number: #0c6b60;
+        --code-fn: #6a3fb5;
+        --logo-halo: #d6f1ff;
+        --logo-wing: #9fb8cc;
+        --logo-body: #12304a;
         color-scheme: light;
     }
 }
 
 :root[data-theme="light"] {
-    --bg: #eef0f2;
+    --bg: #eef3f7;
     --surface: #ffffff;
-    --sunken: #e3e6ea;
-    --line: #d0d4da;
-    --line-strong: #adb3bb;
-    --text: #1b1712;
-    --muted: #4d4740;
-    --faint: #777068;
-    --accent: #9c5300;
-    --accent-soft: #fbe8cc;
-    --brass: #9c5300;
-    --brass-soft: #fbe8cc;
+    --sunken: #e2e9ef;
+    --line: #cdd7df;
+    --line-strong: #a7b4c0;
+    --text: #0d1b26;
+    --muted: #3d5163;
+    --faint: #5a6d7c;
+    --accent: #0a659a;
+    --accent-soft: #dceffa;
+    --brass: #0a659a;
+    --brass-soft: #dceffa;
     --ok: #2c6e2f;
     --ok-soft: #dcefdc;
     --warn: #ad3f0c;
     --warn-soft: #fbe3d5;
     --bad: #b02a1d;
     --bad-soft: #f8dcd8;
-    --code-bg: #e6e8ec;
-    --code-comment: #6b645c;
-    --code-keyword: #9c5300;
+    --code-bg: #e4ebf1;
+    --code-comment: #56656f;
+    --code-keyword: #0a659a;
     --code-string: #2e6b2e;
-    --code-number: #ad3f0c;
-    --code-fn: #1f5ea8;
+    --code-number: #0c6b60;
+    --code-fn: #6a3fb5;
+    --logo-halo: #d6f1ff;
+    --logo-wing: #9fb8cc;
+    --logo-body: #12304a;
     color-scheme: light;
 }
 

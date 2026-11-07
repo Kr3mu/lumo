@@ -1,5 +1,6 @@
 <script>
     import Icon from "./Icon.svelte";
+    import Logo from "./Logo.svelte";
     import Search from "./Search.svelte";
 
     let { theme, oncycletheme, drawer, onmenu } = $props();
@@ -12,6 +13,7 @@
         <Icon name="menu" />
     </button>
     <a class="brand" href="#introduction">
+        <Logo />
         <span class="mark">Lumo</span>
         <span class="docs">docs</span>
     </a>
