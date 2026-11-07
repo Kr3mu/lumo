@@ -38,6 +38,7 @@ end
 local Players = Database.table('lt_players')
 local Inventory = Database.table('lt_inventory')
 local Settings = Database.table('lt_settings', { key = 'player_id' })
+local Loose = Database.table('lt_players', { strict = false })
 
 local function writing()
     local id = Players:insert({ license = 'license:a', name = 'Alice', money = 100, kills = 5 })
@@ -108,6 +109,30 @@ local function rawSql(id)
     check('errors print readably', not ok and tostring(err):find('1062', 1, true) ~= nil, tostring(err))
 end
 
+local function strict(id)
+    local codes = Database.Error
+    local ok, err = pcall(Players.find, Players, { licnese = 'license:a' })
+    check('strict: unknown column raises with a hint', not ok and err.code == codes.UNKNOWN_COLUMN
+        and err.message:find('did you mean license', 1, true) ~= nil, err)
+    raises('strict: wrong type in where', codes.BAD_TYPE, function() Players:find({ license = 123 }) end)
+    raises('strict: wrong type in an IN list', codes.BAD_TYPE, function() Players:find({ id = { 1, 'two' } }) end)
+    raises('strict: wrong type in update', codes.BAD_TYPE, function() Players:update(id, { money = 'lots' }) end)
+    raises('strict: fraction into an INT column', codes.BAD_TYPE, function() Players:update(id, { money = 1.5 }) end)
+    raises('strict: NULL into NOT NULL', codes.BAD_TYPE, function() Players:insert({ license = 'license:z', name = Database.null }) end)
+    raises('strict: increment needs a numeric column', codes.BAD_TYPE, function() Players:increment(id, { name = 1 }) end)
+    raises('strict: wrong key type', codes.BAD_TYPE, function() Players:get('7') end)
+    raises('strict: orderBy column is checked', codes.UNKNOWN_COLUMN, function() Players:list({ orderBy = 'monye DESC' }) end)
+    raises('strict: columns option is checked', codes.UNKNOWN_COLUMN, function() Players:get(id, { columns = { 'nmae' } }) end)
+    raises('strict: upsert update list is checked', codes.UNKNOWN_COLUMN, function()
+        Settings:upsert({ player_id = id, key = 'k', value = 'v' }, { update = { 'vlaue' } })
+    end)
+    check('strict: whole floats pass for INT', Players:update(id, { money = 120.0 }) == 1)
+    check('strict: Database.null passes for a nullable column', Players:update(id, { crew_id = Database.null }) == 1)
+
+    raises('strict off: MariaDB reports the unknown column', codes.BAD_FIELD, function() Loose:find({ licnese = 'x' }) end)
+    check('strict off: tables still work', (Loose:get(id) or {}).id == id)
+end
+
 local function transactions(id)
     local left = Database.transaction(function()
         local p = Players:get(id, { lock = true })
@@ -175,6 +200,38 @@ local function asyncCalls()
     check('Database.async runs queries in parallel', ra == 1 and rb == 2 and ms < 95, ('%.1f ms'):format(ms))
 end
 
+-- Lua-side cost only: inside a batch, writes are collected and never sent, and the error throws the batch away.
+local function luaCost(label, repo, fn)
+    local n, elapsed = 100000, 0
+    pcall(Database.batch, function()
+        local started = os.nanotime()
+        for i = 1, n do fn(repo, i) end
+        elapsed = os.nanotime() - started
+        error('discard')
+    end)
+    print(('timing: %-34s %6.2f us per call, Lua only (%d calls)'):format(label, elapsed / n / 1e3, n))
+end
+
+local function strictCost()
+    for _ = 1, 2 do
+        luaCost('update          strict', Players, function(r, i) r:update(1, { money = i, kills = 2 }) end)
+        luaCost('update          loose', Loose, function(r, i) r:update(1, { money = i, kills = 2 }) end)
+        luaCost('updateWhere IN  strict', Players, function(r, i) r:updateWhere({ license = 'license:b', crew_id = { 1, 2, 3 } }, { money = i }) end)
+        luaCost('updateWhere IN  loose', Loose, function(r, i) r:updateWhere({ license = 'license:b', crew_id = { 1, 2, 3 } }, { money = i }) end)
+        luaCost('insert 4 cols   strict', Players, function(r, i) r:insert({ license = 'x', name = 'y', money = i, kills = 1 }) end)
+        luaCost('insert 4 cols   loose', Loose, function(r, i) r:insert({ license = 'x', name = 'y', money = i, kills = 1 }) end)
+    end
+
+    local fresh = Database.table('lt_settings', { key = 'key' })
+    local started = os.nanotime()
+    fresh:count()
+    local first = os.nanotime() - started
+    started = os.nanotime()
+    fresh:count()
+    local second = os.nanotime() - started
+    print(('timing: %-34s %6.1f us once per table (first call %.1f us, next %.1f us)'):format('schema load', (first - second) / 1e3, first / 1e3, second / 1e3))
+end
+
 local function timing()
     local n = 2000
     local function measure(label, fn)
@@ -184,8 +241,12 @@ local function timing()
     end
 
     measure("Database.value('SELECT 1')", function() Database.value('SELECT 1') end)
-    measure('Players:get(id)', function() Players:get(1) end)
-    measure('Players:find({ license })', function(i) Players:find({ license = (i % 2 == 0) and 'license:b' or 'license:c' }) end)
+    for round = 1, 3 do
+        measure(('Players:get(id)        strict  r%d'):format(round), function() Players:get(1) end)
+        measure(('Players:get(id)        loose   r%d'):format(round), function() Loose:get(1) end)
+        measure(('Players:find(license)  strict  r%d'):format(round), function(i) Players:find({ license = (i % 2 == 0) and 'license:b' or 'license:c' }) end)
+        measure(('Players:find(license)  loose   r%d'):format(round), function(i) Loose:find({ license = (i % 2 == 0) and 'license:b' or 'license:c' }) end)
+    end
     measure('Database.one(raw find)', function(i)
         Database.one('SELECT * FROM lt_players WHERE license = ? LIMIT 1', (i % 2 == 0) and 'license:b' or 'license:c')
     end)
@@ -198,10 +259,12 @@ CreateThread(function()
         local id = writing()
         reading(id)
         rawSql(id)
+        strict(id)
         transactions(id)
         batches(id)
         sessions()
         asyncCalls()
+        strictCost()
         timing()
     end)
     if not ok then check('suite ran to the end', false, err) end

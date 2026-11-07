@@ -23,6 +23,8 @@ Errors.codes = {
     BAD_IDENTIFIER = 'BAD_IDENTIFIER',    -- a table or column name with characters other than [A-Za-z0-9_]
     BAD_ORDER_BY = 'BAD_ORDER_BY',        -- orderBy is not "column [ASC|DESC], ..."
     BAD_UPSERT = 'BAD_UPSERT',            -- upsert without { update = { ...columns } }
+    UNKNOWN_COLUMN = 'UNKNOWN_COLUMN',    -- strict mode: the column is not in the table
+    BAD_TYPE = 'BAD_TYPE',                -- strict mode: a value does not fit its column's type, or NULL for NOT NULL
     EMPTY_WHERE = 'EMPTY_WHERE',          -- a where table with no columns, or updateWhere/deleteWhere without one
     READ_IN_BATCH = 'READ_IN_BATCH',      -- a read inside Database.batch
     NO_SESSION = 'NO_SESSION',            -- a session id the bridge does not know

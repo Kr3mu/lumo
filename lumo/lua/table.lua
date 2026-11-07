@@ -1,6 +1,6 @@
 -- Table repositories: Players:find({ license = l }), Players:increment(id, { money = 500 }), ...
 -- Each method builds its SQL once per call shape (method, columns, options) and caches it on the table object.
-return function(Errors, Query, Sql)
+return function(Errors, Query, Sql, Strict)
     local Table = {}
     Table.__index = Table
 
@@ -12,15 +12,25 @@ return function(Errors, Query, Sql)
     local tables = {}
 
     ---@param name string
-    ---@param options { key?: string } | nil
+    ---@param options { key?: string, strict?: boolean } | nil
     ---@return table
     function Table.get_table(name, options)
         local key = options and options.key or 'id'
-        local id = name .. '|' .. key
+        local strict = Strict.enabled
+        if options and options.strict ~= nil then strict = options.strict end
+
+        local id = name .. '|' .. key .. (strict and '|strict' or '')
         local repo = tables[id]
         if repo then return repo end
 
-        repo = setmetatable({ name = name, quoted = Sql.ident(name), key = Sql.ident(key), cache = {} }, Table)
+        repo = setmetatable({
+            name = name,
+            quoted = Sql.ident(name),
+            keyName = key,
+            key = Sql.ident(key),
+            strict = strict,
+            cache = {},
+        }, Table)
         tables[id] = repo
         return repo
     end
@@ -39,6 +49,14 @@ return function(Errors, Query, Sql)
         return Sql.select(columns), columns and concat(columns, ',') or '*'
     end
 
+    local function checkRead(self, where, options)
+        if where then Strict.where(self, where) end
+        if options then
+            Strict.names(self, options.columns)
+            Strict.orderBy(self, options.orderBy)
+        end
+    end
+
     local function suffix(options)
         local orderBy = options and options.orderBy
         local lock = options and options.lock
@@ -48,6 +66,10 @@ return function(Errors, Query, Sql)
     ---@param key any primary key value
     ---@param options { columns?: string[], lock?: boolean } | nil
     function Table:get(key, options)
+        if self.strict then
+            Strict.key(self, key)
+            checkRead(self, nil, options)
+        end
         local cols, colsKey = selectPart(options)
         local lock = options and options.lock
         local sql = cached(self, 'get|' .. colsKey .. (lock and '|lock' or ''), function()
@@ -59,6 +81,7 @@ return function(Errors, Query, Sql)
     ---@param where table
     ---@param options { columns?: string[], orderBy?: string, lock?: boolean } | nil
     function Table:find(where, options)
+        if self.strict then checkRead(self, where, options) end
         local params = {}
         local clause, whereKey = Sql.where(where, params)
         local cols, colsKey = selectPart(options)
@@ -72,6 +95,7 @@ return function(Errors, Query, Sql)
 
     ---@param options { where?: table, columns?: string[], orderBy?: string, limit?: integer, offset?: integer } | nil
     function Table:list(options)
+        if self.strict then checkRead(self, options and options.where, options) end
         local params = {}
         local clause, whereKey = '', ''
         if options and options.where then
@@ -96,6 +120,7 @@ return function(Errors, Query, Sql)
     ---@param where table | nil
     ---@return integer
     function Table:count(where)
+        if self.strict then checkRead(self, where) end
         local params = {}
         local clause, whereKey = '', ''
         if where then
@@ -111,6 +136,7 @@ return function(Errors, Query, Sql)
     ---@param where table
     ---@return boolean
     function Table:exists(where)
+        if self.strict then checkRead(self, where) end
         local params = {}
         local clause, whereKey = Sql.where(where, params)
         local sql = cached(self, 'exists|' .. whereKey, function()
@@ -136,6 +162,7 @@ return function(Errors, Query, Sql)
     ---@param row table
     ---@return integer | nil insert id
     function Table:insert(row)
+        if self.strict then Strict.row(self, row) end
         local columns, key = Sql.columns(row)
         local params = {}
         rowValues(row, columns, params)
@@ -152,6 +179,9 @@ return function(Errors, Query, Sql)
     function Table:insertMany(rows)
         local count = #rows
         if count == 0 then return 0 end
+        if self.strict then
+            for i = 1, count do Strict.row(self, rows[i]) end
+        end
 
         local columns, key = Sql.columns(rows[1])
         local params = {}
@@ -180,6 +210,10 @@ return function(Errors, Query, Sql)
     ---@param changes table
     ---@return integer | nil affected rows
     function Table:update(key, changes)
+        if self.strict then
+            Strict.key(self, key)
+            Strict.row(self, changes)
+        end
         local params = {}
         local set, setKey = setClause(changes, params, '{c} = ?')
         params[#params + 1] = key
@@ -193,6 +227,10 @@ return function(Errors, Query, Sql)
     ---@param deltas table column = amount to add (negative to subtract)
     ---@return integer | nil affected rows
     function Table:increment(key, deltas)
+        if self.strict then
+            Strict.key(self, key)
+            Strict.deltas(self, deltas)
+        end
         local params = {}
         local set, setKey = setClause(deltas, params, '{c} = {c} + ?')
         params[#params + 1] = key
@@ -216,6 +254,10 @@ return function(Errors, Query, Sql)
     ---@param changes table
     ---@return integer | nil affected rows
     function Table:updateWhere(where, changes)
+        if self.strict then
+            Strict.row(self, changes)
+            Strict.where(self, where)
+        end
         local params = {}
         local set, setKey = setClause(changes, params, '{c} = ?')
         local clause, whereKey = writeFilter(where, params)
@@ -232,6 +274,11 @@ return function(Errors, Query, Sql)
         local update = options and options.update
         if not update or #update == 0 then
             Errors.raise(Errors.codes.BAD_UPSERT, 'upsert needs { update = { ...columns } }: the columns to change when the row exists')
+        end
+
+        if self.strict then
+            Strict.row(self, row)
+            Strict.names(self, update)
         end
 
         local columns, key = Sql.columns(row)
@@ -252,6 +299,7 @@ return function(Errors, Query, Sql)
     ---@param key any primary key value
     ---@return integer | nil affected rows
     function Table:delete(key)
+        if self.strict then Strict.key(self, key) end
         local sql = cached(self, 'delete', function()
             return 'DELETE FROM ' .. self.quoted .. ' WHERE ' .. self.key .. ' = ?'
         end)
@@ -261,6 +309,7 @@ return function(Errors, Query, Sql)
     ---@param where table
     ---@return integer | nil affected rows
     function Table:deleteWhere(where)
+        if self.strict then Strict.where(self, where) end
         local params = {}
         local clause, whereKey = writeFilter(where, params)
         local sql = cached(self, 'deleteWhere|' .. whereKey, function()

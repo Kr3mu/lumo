@@ -29,7 +29,8 @@ local Context = part('context')
 local Sql = part('sql')(Errors)
 local Bridge = part('bridge')(Errors, resource)
 local Query = part('query')(Bridge, Context, Errors)
-local Table = part('table')(Errors, Query, Sql)
+local Strict = part('strict')(Errors, Bridge, Sql)
+local Table = part('table')(Errors, Query, Sql, Strict)
 
 local Database = {}
 
@@ -42,7 +43,7 @@ Database.all_rows = Sql.ALL_ROWS
 Database.Error = Errors.codes
 
 ---@param name string table name
----@param options { key?: string } | nil primary key column, default 'id'
+---@param options { key?: string, strict?: boolean } | nil primary key column (default 'id'); strict overrides lumo_strict
 function Database.table(name, options)
     return Table.get_table(name, options)
 end
