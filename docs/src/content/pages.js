@@ -16,7 +16,7 @@ export const groups = [
     { title: "Getting started", pages: ["introduction", "installation", "configuration"] },
     { title: "Guide", pages: ["tables", "reading", "writing", "raw-sql", "errors", "transactions", "batches", "sessions", "threads"] },
     { title: "API reference", pages: ["api-db", "api-table", "types"] },
-    { title: "More", pages: ["performance", "architecture", "migrating", "faq"] },
+    { title: "More", pages: ["performance", "vs-oxmysql", "architecture", "migrating", "faq"] },
 ];
 
 export const pages = {
@@ -391,6 +391,68 @@ export const pages = {
             ] },
             { t: "h2", id: "chatty", s: "What it avoids" },
             { t: "diagram", name: "chatty" },
+        ],
+    },
+
+    "vs-oxmysql": {
+        title: "Lumo vs oxmysql",
+        lede: "How the two drivers are built, side by side. Every oxmysql statement on this page comes from its v2.14.3 source, linked where it is made.",
+        blocks: [
+            { t: "h2", id: "summary", s: "At a glance" },
+            { t: "table", head: ["", "oxmysql 2.14.3", "Lumo 0.1"], rows: [
+                ["Connector", "`mysql2`", "`mariadb` (the MariaDB Node connector)"],
+                ["Where queries run", "the resource's Node main thread", "a worker thread that owns the pool; the main thread only hands requests over"],
+                ["Answer to Lua", "a Lua callback; `.await` wraps it in a promise and yields until the next tick", "the export's return value when the query finishes within 2 ms; a promise only when it doesn't"],
+                ["Calls into the driver", "through the exports proxy, with a callback function reference on every call", "cached raw function references, four flat arguments, no callback"],
+                ["Everyday queries", "`connection.query`: text protocol, values escaped by mysql2", "text protocol, values escaped by the driver"],
+                ["Transaction list", "`START TRANSACTION`, then one awaited round trip per statement", "one multi-statement query per ~1 MB chunk, `COMMIT` only in the last"],
+                ["Interactive transaction", "`MySQL.startTransaction(cb)`, fixed 30 s limit, `return false` rolls back", "`Database.transaction(fn)`: table calls join it; raising rolls back; configurable limit"],
+                ["Errors", "logged to the console; the caller gets `nil` or `false`", "raised as a Lua error table with `code`, `state`, `message`, `sql`"],
+                ["Dates", "milliseconds since 1970 (custom `typeCast`)", "strings, exactly as stored"],
+                ["Placeholders", "`?`, `:name` and `@name`", "`?` only"],
+            ] },
+
+            { t: "h2", id: "threading", s: "Where the work happens" },
+            { t: "p", s: "oxmysql runs mysql2's pool on the resource's Node main thread ([pool.ts](https://github.com/overextended/oxmysql/blob/v2.14.3/src/database/pool.ts)). Parsing results, building rows and logging all happen there, interleaved with every other script tick in the resource." },
+            { t: "p", s: "Lumo's driver starts a worker thread that owns the connections and does the protocol work. The main thread writes each request into shared memory and, for a fast query, waits up to `lumo_inline_budget_ms` for the reply. A query that takes longer continues on the worker while the main thread moves on, so a slow query can hold the server thread for at most that budget." },
+
+            { t: "h2", id: "answer", s: "How the answer gets back to Lua" },
+            { t: "p", s: "This is the biggest difference for small queries. In oxmysql, `MySQL.scalar.await` creates a promise, passes a Lua callback into the export and yields with `Citizen.Await`. The export schedules a resource tick before each query so the coroutine is resumed soon after the callback fires ([connection.ts](https://github.com/overextended/oxmysql/blob/v2.14.3/src/database/connection.ts), [scheduleTick.ts](https://github.com/overextended/oxmysql/blob/v2.14.3/src/utils/scheduleTick.ts)). Every query is a yield, a callback crossing back into Lua and a resume." },
+            { t: "p", s: "Lumo calls a cached raw function reference with flat arguments. When the worker answers within the budget, the value is the call's return value: no callback, no promise, and the coroutine never yields. Measured on the same server, small reads took 1.36–1.72 ms with oxmysql and 108–203 µs with Lumo's driver." },
+            { t: "diagram", name: "callpath" },
+
+            { t: "h2", id: "transactions", s: "Transactions" },
+            { t: "p", s: "oxmysql's `MySQL.transaction` begins a transaction and then awaits `connection.query` once per statement, in order ([rawTransaction.ts](https://github.com/overextended/oxmysql/blob/v2.14.3/src/database/rawTransaction.ts)). Each statement is a full round trip to MariaDB, which is why 10,000 inserts took 14.10 s in the benchmark." },
+            { t: "p", s: "Lumo sends the statements as one multi-statement query per chunk of about 1 MB, with `COMMIT` only at the end of the last chunk. MariaDB stops at the first failing statement and the driver then rolls back, so the semantics stay all-or-nothing. The same 10,000 inserts took 258 ms, the speed of MariaDB running them from a console client." },
+            { t: "table", head: ["", "oxmysql", "Lumo"], rows: [
+                ["10,000 inserts in one transaction", "14.10 s", "258 ms"],
+                ["Round trips for N statements", "N + 2", "about one per MB of SQL"],
+                ["On failure", "rolls back, logs, callback gets `false`", "rolls back, raises the MariaDB error"],
+            ] },
+            { t: "p", s: "For read-then-write logic, oxmysql's `MySQL.startTransaction` hands your function a query function and rolls back after a fixed 30 seconds ([startTransaction.ts](https://github.com/overextended/oxmysql/blob/v2.14.3/src/database/startTransaction.ts)). Lumo's `Database.transaction` pins a connection to your function's thread, so ordinary table calls inside it join the transaction. The limit is `lumo_checkout_timeout_ms`, connections held by a stopping resource are rolled back, and every connection is reset before it returns to the pool." },
+
+            { t: "h2", id: "prepare", s: "Prepared statements" },
+            { t: "p", s: "`MySQL.prepare` uses mysql2's `execute`: a server-side prepared statement, run once per parameter set, one after another ([rawExecute.ts](https://github.com/overextended/oxmysql/blob/v2.14.3/src/database/rawExecute.ts)). Lumo has no prepared statements. Values are bound client-side, which measured faster here because a prepared statement needs an extra round trip; repeated inserts go through `insertMany` (one multi-row INSERT) or `Database.batch`." },
+
+            { t: "h2", id: "errors", s: "Errors" },
+            { t: "p", s: "oxmysql logs a failed query to the console and hands the caller `nil` (or `false` for transactions), unless the resource opts into `return_callback_errors`. Lumo raises: the error is a table with the MariaDB error number in `code`, so `pcall` callers can handle a duplicate key (`1062`) and let everything else surface." },
+
+            { t: "h2", id: "only-oxmysql", s: "What oxmysql has that Lumo doesn't" },
+            { t: "list", items: [
+                "**Named placeholders.** `:name` and `@name` parameters ([parseArguments.ts](https://github.com/overextended/oxmysql/blob/v2.14.3/src/utils/parseArguments.ts)). Lumo takes `?` only.",
+                "**Compatibility layers.** oxmysql also provides `mysql-async` and `ghmattimysql`, so old resources run unchanged. Lumo has its own API and a [migration guide](#migrating).",
+                "**MySQL support.** oxmysql works with MySQL and MariaDB. Lumo targets MariaDB 11.4+.",
+                "**Debugging tools.** `mysql_debug` with optional per-query profiling through `INFORMATION_SCHEMA.PROFILING`, and an in-game query UI (`mysql_ui`). Lumo logs slow queries (`lumo_slow_query_ms`) and every call with `lumo_debug`, without a UI.",
+                "**Callback style.** Every oxmysql function also accepts a callback. Lumo calls look blocking and run inside threads; `Database.async` covers running queries in parallel.",
+                "**Isolation level setting.** `mysql_transaction_isolation_level` sets it for every pooled connection; Lumo uses the server's default.",
+            ] },
+
+            { t: "h2", id: "same", s: "What is the same" },
+            { t: "list", items: [
+                "Both talk to the database from Node and keep a pool of 10 connections by default.",
+                "Both use the text protocol with client-side value escaping for everyday queries.",
+                "Both read their connection string from a convar; Lumo falls back to `mysql_connection_string` if `lumo_connection_string` is empty.",
+            ] },
         ],
     },
 
