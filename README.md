@@ -33,6 +33,9 @@ Most of the time in a FiveM database call is not spent in the database. A small 
 - **Transactions done right.** `Database.transaction(fn)` pins one connection to your function, commits on return and
   rolls back on error. `Database.batch(fn)` sends many writes as one multi-statement round trip.
 - **SQL when you need it.** Joins, aggregates and reports use `Database.one`, `all`, `value` and `exec`.
+- **Strict by default.** Each table's columns are read once; a misspelled column or a value of the wrong type fails
+  in Lua with the column's name (`players.licnese does not exist (did you mean license?)`). It costs about 1 µs a call;
+  `set lumo_strict false` or `Database.table(name, { strict = false })` turns it off.
 - **Safe by construction.** Values are always bound; column names are checked; `orderBy` only accepts
   `column [ASC|DESC]`; a write with an empty filter refuses to touch every row.
 
@@ -140,7 +143,7 @@ if not ok and err.code == Database.Error.DUPLICATE_ENTRY then print('tag taken')
 
 | Call | Returns |
 |---|---|
-| `Database.table(name, { key = 'id' })` | a table repository |
+| `Database.table(name, { key = 'id', strict = true })` | a table repository |
 | `T:get(key, { columns, lock })` / `T:find(where, { columns, orderBy, lock })` | row or `nil` |
 | `T:list({ where, columns, orderBy, limit, offset })` | array of rows |
 | `T:count(where)` / `T:exists(where)` | integer / boolean |
@@ -168,6 +171,7 @@ if not ok and err.code == Database.Error.DUPLICATE_ENTRY then print('tag taken')
 | `lumo_slow_query_ms` | `150` | slower queries are logged with resource and SQL |
 | `lumo_checkout_timeout_ms` | `10000` | a held session or transaction older than this is rolled back |
 | `lumo_debug` | `false` | log every call |
+| `lumo_strict` | `true` | check table calls against each table's columns; per table: `{ strict = false }` |
 
 ## Performance
 

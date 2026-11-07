@@ -14,7 +14,7 @@
 
 export const groups = [
     { title: "Getting started", pages: ["introduction", "installation", "configuration"] },
-    { title: "Guide", pages: ["tables", "reading", "writing", "raw-sql", "errors", "transactions", "batches", "sessions", "threads"] },
+    { title: "Guide", pages: ["tables", "strict", "reading", "writing", "raw-sql", "errors", "transactions", "batches", "sessions", "threads"] },
     { title: "API reference", pages: ["api-db", "api-table", "types"] },
     { title: "More", pages: ["performance", "why-fast", "vs-oxmysql", "architecture", "migrating", "faq"] },
 ];
@@ -88,6 +88,7 @@ export const pages = {
                 ["lumo_slow_query_ms", "150", "Queries slower than this are logged with the resource, table and generated SQL"],
                 ["lumo_checkout_timeout_ms", "10000", "A held session or open transaction older than this is rolled back and returned"],
                 ["lumo_debug", "false", "Logs every query with its duration and whether it was answered inline or async"],
+                ["lumo_strict", "true", "Checks table calls against the table's columns before they run; see [Strict mode](#strict)"],
             ] },
             { t: "h2", id: "budget", s: "Choosing the inline budget" },
             { t: "p", s: "While a query is inline, the server thread waits for it. 2 ms covers almost every read and a single autocommit write (the redo-log flush takes 1.0–1.4 ms on a typical disk). Lower it if many slow queries run in the same frame; set it to `0` to make every query async." },
@@ -118,6 +119,39 @@ export const pages = {
             { t: "p", s: "The SQL for a call depends only on its shape: the table, the method and the column names you pass, never the values. Lumo builds it the first time a shape is used and caches it, so later calls do a few table lookups and no string building. In the syntax benchmark this costs about 10 µs over hand-written SQL on the C# prototype and is lost in the noise on Node." },
             { t: "h2", id: "safety", s: "Column names and values" },
             { t: "p", s: "Values are always bound as parameters, never pasted into SQL. Column names come from table keys, so Lumo checks every name against `[A-Za-z0-9_]` and quotes it. `orderBy` accepts only `column` or `column ASC|DESC` lists. Building a `where` table from player input is safe; building a column name from player input raises an error." },
+        ],
+    },
+
+    strict: {
+        title: "Strict mode",
+        lede: "Table calls are checked against the real table before they reach MariaDB: every column you name must exist, and every value must fit its column's type. On by default, off with one convar.",
+        blocks: [
+            { t: "code", lang: "lua", s: "local Players = Database.table('players')\n\nPlayers:find({ licnese = license })\n-- UNKNOWN_COLUMN: players.licnese does not exist (did you mean license?)\n\nPlayers:update(id, { money = 'lots' })\n-- BAD_TYPE: players.money is int(11), got string\n\nPlayers:insert({ license = license, name = Database.null })\n-- BAD_TYPE: players.name is NOT NULL" },
+            { t: "h2", id: "how", s: "How it works" },
+            { t: "p", s: "The first call on a table reads its columns from `information_schema` (one query, about 0.26 ms) and keeps them for the life of the resource. After that every call checks its column names and values in Lua, before any SQL is built or sent. Without strict mode the same typo still fails, but later and less helpfully: MariaDB answers with error 1054, and a wrong type is often converted silently." },
+            { t: "table", mono: [0], head: ["Column type", "Accepts"], rows: [
+                ["INT, BIGINT, SMALLINT, YEAR, …", "a number with no fraction (`5` and `5.0`)"],
+                ["TINYINT(1), BIT(1)", "a whole number or a boolean"],
+                ["DECIMAL", "a number or a string"],
+                ["FLOAT, DOUBLE", "any number"],
+                ["CHAR, VARCHAR, TEXT, ENUM, SET, JSON, BLOB", "a string"],
+                ["DATE, DATETIME, TIMESTAMP, TIME", "a string such as `'2026-11-07 21:00:00'`"],
+                ["any nullable column", "`Database.null` as well"],
+            ] },
+            { t: "p", s: "Everything a table call names is checked: `where` keys and values (each element of an `IN` list too), rows for `insert`, `insertMany` and `upsert`, changes for `update` and `updateWhere`, `increment` deltas (numeric columns only), the primary key value, the `columns` option, `orderBy` columns and `upsert`'s `update` list. Raw SQL through `Database.one`, `all`, `value` and `exec` is not checked." },
+            { t: "h2", id: "off", s: "Turning it off" },
+            { t: "code", lang: "cfg", title: "server.cfg", s: "set lumo_strict false      # every table, every resource" },
+            { t: "code", lang: "lua", title: "one table", s: "local Logs = Database.table('logs', { strict = false })   -- overrides lumo_strict either way" },
+            { t: "h2", id: "cost", s: "What it costs" },
+            { t: "p", s: "Measured with the test suite on Legacy FXServer, MariaDB 12.3.3. The Lua-only figures run 100,000 calls inside a batch that is never sent, so they show the checks alone, without the bridge or the database." },
+            { t: "table", mono: [1, 2, 3], head: ["Call", "Strict", "Off", "Difference"], rows: [
+                ["`update(1, { money, kills })`", "2.86–3.32 µs", "2.44–2.67 µs", "+0.4–0.7 µs"],
+                ["`updateWhere({ license, crew_id = { 1, 2, 3 } }, { money })`", "6.19–6.46 µs", "5.08–5.50 µs", "+0.7–1.4 µs"],
+                ["`insert` with 4 columns", "3.33–3.62 µs", "2.57–2.67 µs", "+0.8–1.1 µs"],
+                ["schema load, first call per table", "0.26 ms once", "none", ""],
+            ] },
+            { t: "p", s: "A whole query costs 125–220 µs, and with strict mode on or off, `get` and `find` stayed inside the same ±40 µs run-to-run noise over three alternating rounds of 2,000 calls. The checks are about 1% of a query." },
+            { t: "note", kind: "info", s: "The columns are read once per resource start. After a migration that changes a table, restart the resources that use it, or the checks keep using the old columns." },
         ],
     },
 
@@ -222,6 +256,8 @@ export const pages = {
                 ["NO_SESSION", "the bridge does not know the session, usually after it expired"],
                 ["NOT_STARTED", "the resource running the bridge is not started"],
                 ["BAD_ARGUMENT", "the bridge received an argument of the wrong type"],
+                ["UNKNOWN_COLUMN", "[strict mode](#strict): a column the table does not have; the message suggests the closest name"],
+                ["BAD_TYPE", "[strict mode](#strict): a value that does not fit its column, or `Database.null` for a NOT NULL column"],
             ] },
             { t: "note", kind: "tip", s: "`tostring(err)` gives a one-line summary, so an unhandled Lumo error still prints readably in the server console." },
         ],
@@ -297,7 +333,7 @@ export const pages = {
         title: "Database",
         lede: "The module `@lumo/init.lua` defines (or `require '@lumo'` returns). Every Lumo call starts here.",
         blocks: [
-            { t: "api", name: "Database.table", sig: "Database.table(name, options?)", calls: 0, returns: "Table", s: "Returns the repository for a table, creating it on first use. One object per table name per resource.", params: [{ name: "name", type: "string", s: "table name, `[A-Za-z0-9_]` only" }, { name: "options.key", type: "string", s: "primary key column, default `'id'`" }] },
+            { t: "api", name: "Database.table", sig: "Database.table(name, options?)", calls: 0, returns: "Table", s: "Returns the repository for a table, creating it on first use. One object per table name per resource.", params: [{ name: "name", type: "string", s: "table name, `[A-Za-z0-9_]` only" }, { name: "options.key", type: "string", s: "primary key column, default `'id'`" }, { name: "options.strict", type: "boolean", s: "check calls against the table's columns; defaults to `lumo_strict` (true). See [Strict mode](#strict)" }] },
             { t: "api", name: "Database.one", sig: "Database.one(sql, ...)", calls: 1, returns: "row | nil", s: "Runs raw SQL and returns the first row." },
             { t: "api", name: "Database.all", sig: "Database.all(sql, ...)", calls: 1, returns: "{ row }", s: "Runs raw SQL and returns every row." },
             { t: "api", name: "Database.value", sig: "Database.value(sql, ...)", calls: 1, returns: "any | nil", s: "Runs raw SQL and returns the first column of the first row." },
