@@ -38,9 +38,8 @@ Most of the time in a FiveM database call is not spent in the database. A small 
 
 ## Install
 
-Requirements: FXServer (Legacy, Node 22 runtime), MariaDB 11.4+, and [ox_lib](https://github.com/overextended/ox_lib)
-in resources that use Lumo. FiveM has no built-in `require`: listing `@ox_lib/init.lua` first in a manifest gives the
-resource ox_lib's `require`, which loads `@lumo` into it. Lumo then loads the rest of its own files itself.
+Requirements: FXServer (Legacy, Node 22 runtime) and MariaDB 11.4+. Load Lumo either as a manifest script
+(no dependencies) or with [ox_lib](https://github.com/overextended/ox_lib)'s `require`; both use the same `init.lua`.
 
 ### As its own resource
 
@@ -54,6 +53,17 @@ ensure lumo
 
 ```lua
 -- fxmanifest.lua of a resource that uses Lumo
+server_scripts {
+    '@lumo/init.lua',      -- defines Database for the scripts after it
+    'server/init.lua',
+}
+dependencies { 'lumo' }
+```
+
+Or, in a resource that already uses ox_lib:
+
+```lua
+-- fxmanifest.lua
 shared_script '@ox_lib/init.lua'
 server_script 'server/init.lua'
 dependencies { 'ox_lib', 'lumo' }
@@ -69,14 +79,11 @@ Copy the `lumo/` folder into your resource (for example `core/lib/lumo/`) and lo
 ```lua
 -- core/fxmanifest.lua
 node_version '22'
-shared_script '@ox_lib/init.lua'
 server_scripts {
     'lib/lumo/dist/server.js',
+    'lib/lumo/init.lua',      -- or, with ox_lib: local Database = require 'lib.lumo'
     'server/init.lua',
 }
-
--- core/server/players.lua
-local Database = require 'lib.lumo'   -- a path inside core, not '@lumo'
 ```
 
 ```cfg
@@ -88,7 +95,6 @@ The module finds its own files and talks to the driver in the same resource.
 ## Examples
 
 ```lua
-local Database = require '@lumo'
 local Players   = Database.table('players')
 local Inventory = Database.table('inventory')
 
@@ -127,7 +133,7 @@ local crew = Database.one([[
 
 -- Errors are tables
 local ok, err = pcall(Crews.insert, Crews, { tag = tag })
-if not ok and err.code == 1062 then print('tag taken') end
+if not ok and err.code == Database.Error.DUPLICATE_ENTRY then print('tag taken') end
 ```
 
 ## API
@@ -147,6 +153,7 @@ if not ok and err.code == 1062 then print('tag taken') end
 | `local s <close> = Database.session()` | a connection pinned to this thread |
 | `Database.async(fn, ...)` | a promise |
 | `Database.ready()`, `Database.null`, `Database.all_rows` | |
+| `Database.Error.DUPLICATE_ENTRY`, … | error codes by name, to compare with `err.code` |
 
 `where` tables match by equality (joined with AND); an array value becomes `IN (…)` and `Database.null` matches
 `NULL`. The full documentation is at [lumo.kr3mu.dev](https://lumo.kr3mu.dev); its source is in `docs/` (`cd docs && bun install && bun run dev`, deploy with `bun run deploy`).
@@ -176,7 +183,7 @@ The table API costs about the same as hand-written SQL: the SQL is cached per ca
 
 ## Tests
 
-`test/lumo_test` runs every documented behaviour against a real database in FXServer, in both layouts:
+`test/lumo_test` runs every documented behaviour against a real database in FXServer:
 
 ```bash
 mariadb -uroot < test/setup.sql
@@ -184,7 +191,8 @@ mariadb -uroot < test/setup.sql
 ```
 
 It prints one `PASS`/`FAIL` line per check and `LUMO TEST OK: <n> passed, 0 failed`. Set
-`lumo_test_module lib.lumo` to test an embedded copy instead of the `lumo` resource.
+`lumo_test_module lib.lumo` to test an embedded copy instead of the `lumo` resource. Without ox_lib in the manifest,
+list `@lumo/init.lua` before `server.lua` and it tests the manifest-include path.
 
 ## Building
 

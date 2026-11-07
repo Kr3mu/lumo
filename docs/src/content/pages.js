@@ -47,28 +47,32 @@ export const pages = {
 
     installation: {
         title: "Installation",
-        lede: "Lumo is one folder in the monorepo: a server resource with its driver, and a Lua module that other resources load with `require`.",
+        lede: "Lumo is one folder in the monorepo: a server resource with its driver, and a Lua module that other resources load from their manifest or with `require`.",
         blocks: [
             { t: "h2", id: "requirements", s: "Requirements" },
             { t: "table", head: ["Component", "Version", "Why"], rows: [
                 ["FXServer", "Legacy, Node 22 runtime", "the driver runs on Node with a worker thread"],
                 ["MariaDB", "11.4 or newer", "multi-statement batches and the text protocol Lumo uses"],
-                ["ox_lib", "in every resource that uses Lumo", "FiveM has no built-in `require`; ox_lib provides the one that loads Lumo"],
+                ["ox_lib", "optional", "only if you load Lumo with `require`; a manifest include needs nothing"],
             ] },
             { t: "h2", id: "setup", s: "Set up" },
             { t: "steps", items: [
                 { title: "Add Lumo to the monorepo", s: "Lumo lives in the monorepo as `lumo/`: `init.lua` is the Lua module, the driver sits beside it. The server starts it like any other resource." },
                 { title: "Set the connection string and permissions", s: "Lumo reads `lumo_connection_string`. The worker thread needs `add_unsafe_worker_permission`.", lang: "cfg", code: "set lumo_connection_string \"mysql://lumo:secret@127.0.0.1/fivem\"\nadd_unsafe_worker_permission lumo\n\nensure lumo" },
-                { title: "Require it where you need it", s: "FiveM has no built-in `require`. Listing `@ox_lib/init.lua` first in your manifest gives your resource ox_lib's `require`, which can load files from other resources: `require '@lumo'` runs `lumo/init.lua` inside your resource and returns the `Database` module. Lumo loads the rest of its own files itself and defines no globals.", lang: "lua", code: "-- fxmanifest.lua\nfx_version 'cerulean'\ngame 'gta5'\n\nshared_script '@ox_lib/init.lua'\nserver_script 'server/init.lua'\n\ndependencies { 'ox_lib', 'lumo' }" },
-                { title: "Declare a table and use it", s: "Tables are usually declared at the top of a module and used from event handlers.", lang: "lua", code: "-- server/players.lua\nlocal Database = require '@lumo'\nlocal Players = Database.table('players')\n\nCreateThread(function()\n    Database.ready()\n    print(('%d players in the database'):format(Players:count()))\nend)" },
+                { title: "Load it in your resource", s: "List `@lumo/init.lua` before your own scripts. FiveM runs it inside your resource, and every script after it sees `Database`. No other resource is needed.", lang: "lua", code: "-- fxmanifest.lua\nfx_version 'cerulean'\ngame 'gta5'\n\nserver_scripts {\n    '@lumo/init.lua',\n    'server/init.lua',\n}\n\ndependencies { 'lumo' }" },
+                { title: "Declare a table and use it", s: "Tables are usually declared at the top of a module and used from event handlers.", lang: "lua", code: "-- server/players.lua\nlocal Players = Database.table('players')\n\nCreateThread(function()\n    Database.ready()\n    print(('%d players in the database'):format(Players:count()))\nend)" },
             ] },
             { t: "note", kind: "tip", s: "Keep `ensure lumo` above the resources that use it. Calls made before Lumo has connected wait for the connection instead of failing; see [Database.ready](#api-db)." },
+            { t: "h2", id: "require", s: "With ox_lib's require" },
+            { t: "p", s: "FiveM has no built-in `require`, but ox_lib adds one when `@ox_lib/init.lua` is in your manifest. The same `init.lua` works with it: `require '@lumo'` runs it inside your resource and returns the module instead of setting `Database`. Use whichever your resources already use." },
+            { t: "code", lang: "lua", title: "with ox_lib", s: "-- fxmanifest.lua\nshared_script '@ox_lib/init.lua'\nserver_script 'server/init.lua'\ndependencies { 'ox_lib', 'lumo' }\n\n-- server/players.lua\nlocal Database = require '@lumo'" },
+            { t: "note", kind: "info", s: "Both ways load the same file. It finds its own resource and folder from its chunk name, loads the rest of Lumo with `LoadResourceFile`, and never depends on `require` after that. A manifest include sets `Database` only in your resource: every resource has its own Lua state." },
             { t: "h2", id: "monorepo", s: "Inside a monorepo resource" },
             { t: "p", s: "If your server is one big resource with everything inside (a `core` resource with modules under it), copy the `lumo` folder into it, for example to `core/lib/lumo/`, and load the driver from your own manifest. The Lua module finds its own files and talks to the driver in the same resource; nothing else changes." },
-            { t: "code", lang: "lua", title: "core/fxmanifest.lua", s: "fx_version 'cerulean'\ngame 'gta5'\nnode_version '22'\n\nshared_script '@ox_lib/init.lua'\nserver_scripts {\n    'lib/lumo/dist/server.js',   -- the Lumo driver, running inside core\n    'server/init.lua',\n}" },
+            { t: "code", lang: "lua", title: "core/fxmanifest.lua", s: "fx_version 'cerulean'\ngame 'gta5'\nnode_version '22'\n\nserver_scripts {\n    'lib/lumo/dist/server.js',   -- the Lumo driver, running inside core\n    'lib/lumo/init.lua',         -- the Database module\n    'server/init.lua',\n}" },
             { t: "code", lang: "cfg", title: "server.cfg", s: "set lumo_connection_string \"mysql://lumo:secret@127.0.0.1/fivem\"\nadd_unsafe_worker_permission core\nensure core" },
-            { t: "code", lang: "lua", title: "core/server/players.lua", s: "local Database = require 'lib.lumo'   -- a path inside core, not '@lumo'\nlocal Players = Database.table('players')" },
-            { t: "note", kind: "info", s: "`require '@lumo'` means \"the lumo resource\"; a plain path like `'lib.lumo'` means \"this resource\". In both cases every query is still one call into the driver." },
+            { t: "code", lang: "lua", title: "core/server/players.lua", s: "local Players = Database.table('players')\n\n-- or, with ox_lib's require instead of the manifest line:\nlocal Database = require 'lib.lumo'   -- a path inside core, not '@lumo'" },
+            { t: "note", kind: "info", s: "`@lumo/init.lua` and `require '@lumo'` mean \"the lumo resource\"; `lib/lumo/init.lua` and `require 'lib.lumo'` mean \"this resource\". Either way every query is one call into the driver." },
         ],
     },
 
@@ -97,7 +101,7 @@ export const pages = {
         lede: "A table object is a repository for one database table. Declare it once; its methods build the SQL for you.",
         blocks: [
             { t: "code", lang: "lua", s: "local Players   = Database.table('players')                        -- primary key `id`\nlocal Inventory = Database.table('inventory')\nlocal Crews     = Database.table('crews', { key = 'tag' })         -- primary key `tag`" },
-            { t: "note", kind: "info", s: "The examples in these docs leave out the `require` line: every file that uses Lumo starts with `local Database = require '@lumo'`." },
+            { t: "note", kind: "info", s: "The examples in these docs leave out the `require` line: `Database` comes from `@lumo/init.lua` in the manifest, or from `local Database = require '@lumo'` at the top of each file." },
             { t: "h2", id: "methods", s: "What a table can do" },
             { t: "table", mono: [0], head: ["Call", "SQL it runs"], rows: [
                 ["Players:get(7)", "`SELECT * FROM players WHERE id = ?`"],
@@ -180,24 +184,44 @@ export const pages = {
 
     errors: {
         title: "Errors",
-        lede: "A failed query raises a Lua error. The error value is a table, so you can branch on the MariaDB code instead of matching message text.",
+        lede: "A failed query raises a Lua error. The error value is a table, so you can branch on its code with the `Database.Error` enum instead of matching message text.",
         blocks: [
-            { t: "code", lang: "lua", s: "local ok, err = pcall(Crews.insert, Crews, { tag = tag, name = name })\nif not ok then\n    if err.code == 1062 then\n        return notify(src, 'That crew tag is taken.')\n    end\n    error(err) -- anything else is a bug: let it surface\nend" },
+            { t: "code", lang: "lua", s: "local ok, err = pcall(Crews.insert, Crews, { tag = tag, name = name })\nif not ok then\n    if err.code == Database.Error.DUPLICATE_ENTRY then\n        return notify(src, 'That crew tag is taken.')\n    end\n    error(err) -- anything else is a bug: let it surface\nend" },
             { t: "h2", id: "fields", s: "Error fields" },
             { t: "table", mono: [0], head: ["Field", "Example", "Meaning"], rows: [
-                ["code", "1062", "MariaDB error number"],
+                ["code", "1062", "MariaDB error number, or a string for Lumo's own errors"],
+                ["name", "DUPLICATE_ENTRY", "the `Database.Error` name for the code, when it has one"],
                 ["state", "23000", "SQLSTATE class"],
                 ["message", "Duplicate entry 'NOVA' for key 'tag'", "server message"],
                 ["sql", "INSERT INTO `crews` (`name`, `tag`) VALUES (?, ?)", "the generated or raw SQL, without values"],
                 ["resource", "crews", "the resource that made the call"],
             ] },
-            { t: "h2", id: "common", s: "Codes you will meet" },
-            { t: "table", mono: [0], head: ["Code", "Name", "Usual cause"], rows: [
-                ["1062", "ER_DUP_ENTRY", "a UNIQUE or PRIMARY KEY already has this value"],
-                ["1452", "ER_NO_REFERENCED_ROW", "a foreign key points at a row that does not exist"],
-                ["1213", "ER_LOCK_DEADLOCK", "two transactions locked rows in opposite order; retry the transaction"],
-                ["1205", "ER_LOCK_WAIT_TIMEOUT", "a row stayed locked longer than innodb_lock_wait_timeout"],
-                ["1054", "ER_BAD_FIELD_ERROR", "a column name in a where or row table does not exist"],
+            { t: "h2", id: "common", s: "Database.Error" },
+            { t: "p", s: "MariaDB codes you will meet, by name. Any other MariaDB error still arrives with its number in `code` and no `name`." },
+            { t: "table", mono: [0, 1], head: ["Database.Error", "Code", "Usual cause"], rows: [
+                ["DUPLICATE_ENTRY", "1062", "a UNIQUE or PRIMARY KEY already has this value"],
+                ["NO_REFERENCED_ROW", "1452", "a foreign key points at a row that does not exist"],
+                ["ROW_IS_REFERENCED", "1451", "deleting or changing a row another table's foreign key points at"],
+                ["DEADLOCK", "1213", "two transactions locked rows in opposite order; retry the transaction"],
+                ["LOCK_WAIT_TIMEOUT", "1205", "a row stayed locked longer than innodb_lock_wait_timeout"],
+                ["BAD_FIELD", "1054", "a column name in a where or row table does not exist"],
+                ["NO_SUCH_TABLE", "1146", "the table does not exist (a missing migration)"],
+                ["BAD_NULL", "1048", "NULL written to a NOT NULL column"],
+                ["DATA_TOO_LONG", "1406", "a string longer than its column"],
+                ["PARSE_ERROR", "1064", "invalid SQL in a raw query"],
+            ] },
+            { t: "h2", id: "lumo-codes", s: "Lumo's own codes" },
+            { t: "p", s: "Raised before anything reaches MariaDB. Their `code` is the name itself." },
+            { t: "table", mono: [0], head: ["Database.Error", "Raised when"], rows: [
+                ["EMPTY_WHERE", "a where table has no columns, or `updateWhere`/`deleteWhere` gets none; pass `Database.all_rows` to mean every row"],
+                ["BAD_IDENTIFIER", "a table or column name has characters other than `[A-Za-z0-9_]`"],
+                ["BAD_ORDER_BY", "`orderBy` is not `column [ASC|DESC], ...`"],
+                ["BAD_UPSERT", "`upsert` is called without `{ update = { ...columns } }`"],
+                ["READ_IN_BATCH", "a read runs inside `Database.batch`"],
+                ["SESSION_EXPIRED", "a session or transaction was held past `lumo_checkout_timeout_ms`"],
+                ["NO_SESSION", "the driver does not know the session, usually after it expired"],
+                ["NOT_STARTED", "the resource running the driver is not started"],
+                ["BAD_ARGUMENT", "the driver received an argument of the wrong type"],
             ] },
             { t: "note", kind: "tip", s: "`tostring(err)` gives a one-line summary, so an unhandled Lumo error still prints readably in the server console." },
         ],
@@ -271,7 +295,7 @@ export const pages = {
 
     "api-db": {
         title: "Database",
-        lede: "The module `require '@lumo'` returns. Every Lumo call starts here.",
+        lede: "The module `@lumo/init.lua` defines (or `require '@lumo'` returns). Every Lumo call starts here.",
         blocks: [
             { t: "api", name: "Database.table", sig: "Database.table(name, options?)", calls: 0, returns: "Table", s: "Returns the repository for a table, creating it on first use. One object per table name per resource.", params: [{ name: "name", type: "string", s: "table name, `[A-Za-z0-9_]` only" }, { name: "options.key", type: "string", s: "primary key column, default `'id'`" }] },
             { t: "api", name: "Database.one", sig: "Database.one(sql, ...)", calls: 1, returns: "row | nil", s: "Runs raw SQL and returns the first row." },
@@ -284,6 +308,7 @@ export const pages = {
             { t: "api", name: "Database.async", sig: "Database.async(fn, ...)", calls: 0, returns: "promise", s: "Runs `fn(...)` in a new thread and returns a promise for its result, for overlapping independent queries." },
             { t: "api", name: "Database.ready", sig: "Database.ready()", calls: 1, returns: "true", s: "Waits until the driver has its first connection. Table calls already wait on their own; use this for startup checks." },
             { t: "api", name: "Database.null / Database.all_rows", sig: "Database.null, Database.all_rows", calls: 0, returns: "sentinel", s: "`Database.null` matches or writes NULL inside a where or row table. `Database.all_rows` is the explicit where for `updateWhere` and `deleteWhere` on every row." },
+            { t: "api", name: "Database.Error", sig: "Database.Error.DUPLICATE_ENTRY", calls: 0, returns: "enum", s: "Error codes by name, to compare with `err.code`. MariaDB codes are numbers (`DUPLICATE_ENTRY = 1062`), Lumo's own are strings. See [Errors](#errors)." },
         ],
     },
 
