@@ -1,5 +1,3 @@
-export * as Resource from "./resource";
-
 export const Log = {
     Info: (message: string) => console.log(`^5${message}^7`),
     Success: (message: string) => console.log(`^2${message}^7`),

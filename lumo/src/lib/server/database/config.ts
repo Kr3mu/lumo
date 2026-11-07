@@ -5,11 +5,20 @@ import { Log } from "lib/shared";
 
 type ParsedOptions = PoolConfig & Dictionary<string | number | boolean | object | undefined>;
 
+export const Settings = {
+    poolSize: Math.max(1, GetConvarInt("lumo_pool_size", 10)),
+    inlineBudgetMs: Math.max(0, GetConvarInt("lumo_inline_budget_ms", 2)),
+    slowQueryMs: Math.max(0, GetConvarInt("lumo_slow_query_ms", 150)),
+    checkoutTimeoutMs: Math.max(1, GetConvarInt("lumo_checkout_timeout_ms", 10000)),
+    debug: ["true", "1", "on"].includes(GetConvar("lumo_debug", "false").toLowerCase()),
+};
+
 export function GetConfig(): PoolConfig {
-    const connectionString = GetConvar("mysql_connection_string", "mysql://root@localhost").replace(
-        "mysql://",
-        "mariadb://",
-    );
+    const connectionString = (
+        GetConvar("lumo_connection_string", "") ||
+        GetConvar("mysql_connection_string", "") ||
+        "mysql://root@localhost"
+    ).replace("mysql://", "mariadb://");
 
     const options = connectionString.includes("mariadb://")
         ? parseUri(connectionString)
@@ -19,16 +28,16 @@ export function GetConfig(): PoolConfig {
         try {
             options.ssl = JSON.parse(options.ssl);
         } catch (error) {
-            Log.Warn(`[database] Failed to parse ssl in configuration (${error})`);
+            Log.Warn(`[lumo] Failed to parse ssl in configuration (${error})`);
         }
     }
 
     return {
         connectTimeout: 60000,
-        connectionLimit: 10,
         acquireTimeout: 30000,
         keepAliveDelay: 60000,
         ...options,
+        connectionLimit: Settings.poolSize,
         namedPlaceholders: false,
         logParam: false,
         dateStrings: true,
@@ -50,7 +59,7 @@ function parseUri(connectionString: string): ParsedOptions {
     );
 
     if (!match) {
-        throw new Error(`mysql_connection_string structure was invalid (${connectionString})`);
+        throw new Error(`lumo_connection_string structure was invalid (${connectionString})`);
     }
 
     const [, , auth = "", host, port, databaseName = "", query = ""] = match;

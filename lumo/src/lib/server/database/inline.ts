@@ -1,5 +1,4 @@
 import type { Connection } from "mariadb";
-import type { QueryValues } from "types/database";
 
 const partsCache = new Map<string, string[]>();
 
@@ -37,12 +36,11 @@ export function SplitPlaceholders(sql: string): string[] {
 }
 
 // connection.escape follows the session's NO_BACKSLASH_ESCAPES state.
-export function Inline(connection: Connection, sql: string, values?: QueryValues): string {
-    if (!values) return sql;
+export function Inline(connection: Connection, sql: string, list: unknown[] | null): string {
+    if (!list) return sql;
     const parts = SplitPlaceholders(sql);
-    const list = values as unknown[];
-    if (!Array.isArray(list) || parts.length - 1 !== list.length) {
-        throw new Error(`Expected ${parts.length - 1} parameters, received ${Array.isArray(list) ? list.length : "named"}`);
+    if (parts.length - 1 !== list.length) {
+        throw new Error(`Expected ${parts.length - 1} parameters, received ${list.length}`);
     }
 
     let out = parts[0]!;

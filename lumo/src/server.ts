@@ -1,97 +1,86 @@
-import type { TransactionStatement, WorkerOp } from "lib/server/database";
-import type { QueryValues } from "types/database";
+import type { Answer, Request } from "lib/server/database";
+import type { Op, Shape } from "lib/server/database/ops";
 
 import * as Database from "lib/server/database";
+import * as Args from "./args";
+import { CodedError, ToLumoError } from "lib/server/database/errors";
 
-type Callback = (result: unknown, error?: string) => void;
-type LuaStatement = string | [string, QueryValues?] | { query: string; values?: QueryValues; parameters?: QueryValues };
+const shapes: readonly Shape[] = ["run", "one", "value", "all"];
+const releaseModes: readonly Op[] = ["release", "commit", "rollback"];
 
-// Lua sends an empty table as {} rather than [], which mariadb would treat as named placeholders.
-function values(parameters: unknown): QueryValues {
-    if (parameters == null || typeof parameters !== "object") return undefined;
-    return Array.isArray(parameters) ? parameters : Object.keys(parameters).length ? (parameters as QueryValues) : undefined;
+function caller() {
+    return GetInvokingResource() || GetCurrentResourceName();
 }
 
-function statement(entry: LuaStatement): TransactionStatement {
-    if (typeof entry === "string") return entry;
-    if (Array.isArray(entry)) return [entry[0], values(entry[1])];
-    return [entry.query, values(entry.values ?? entry.parameters)];
+function request(op: Op, fields: Partial<Request> = {}): Request {
+    return { op, sql: "", values: null, batch: null, session: null, resource: caller(), ...fields };
 }
 
-function transactionList(query: unknown): TransactionStatement[] {
-    const list: TransactionStatement[] = [];
-    if (Array.isArray(query)) for (let i = 0; i < query.length; i++) list.push(statement(query[i]));
-    else for (const key in query as object) list.push(statement((query as Record<string, LuaStatement>)[key]!));
-    return list;
-}
-
-function isBatch(op: WorkerOp, parameters: unknown): parameters is QueryValues[] {
-    return op === "prepare" && Array.isArray(parameters) && Array.isArray(parameters[0]);
-}
-
-function bridge(op: WorkerOp, failure: unknown = null) {
-    return (query: unknown, parameters: unknown, cb?: Callback) => {
-        const task =
-            op === "transaction"
-                ? Database.Transact(transactionList(query))
-                : isBatch(op, parameters)
-                  ? Database.DispatchAsync("prepareMany", query as string, undefined, parameters)
-                  : Database.DispatchAsync(op, query as string, values(parameters));
-        task.then(
-            (result) => cb?.(result ?? null),
-            (error: Error) => cb?.(failure, error.message),
-        );
+// Arguments come from other resources, so a bad one must come back as [null, err], never a throw.
+function guard<A extends unknown[]>(handler: (...args: A) => Answer | Promise<Answer>) {
+    return (...args: A) => {
+        try {
+            return handler(...args);
+        } catch (error) {
+            return [null, ToLumoError(error)] satisfies Answer;
+        }
     };
 }
 
-type Answer = [unknown] | [null, string];
-
-const answered = (result: unknown): Answer => [result ?? null];
-const failed = (error: Error): Answer => [null, error.message];
-
-function answer(op: WorkerOp, sql: string, vals: QueryValues, batches?: unknown[]): Answer | Promise<Answer> {
-    try {
-        const result = Database.DispatchSync(op, sql, vals, batches);
-        return result instanceof Promise ? result.then(answered, failed) : [result ?? null];
-    } catch (error) {
-        return [null, (error as Error).message];
-    }
+function pick<T>(list: readonly T[], index: unknown, name: string): T {
+    const entry = typeof index === "number" ? list[index] : undefined;
+    if (entry === undefined) throw new CodedError("BAD_ARGUMENT", `${name} must be 0..${list.length - 1}`);
+    return entry;
 }
 
-// MySQL.lua's await calls these with (query, parameters). A returned promise is awaited by the
-// Lua funcref call itself, so Lua never yields when the worker answers within the wait.
-function syncBridge(op: WorkerOp) {
-    if (op === "transaction") {
-        return (query: unknown) => {
-            const list = transactionList(query);
-            // Big batches would only burn the whole sync wait, so they go straight to the async path.
-            if (list.length >= 16) return Database.Transact(list).then(answered, failed);
-            return answer(op, `TRANSACTION (${list.length})`, undefined, list);
-        };
-    }
+exports(
+    "exec",
+    guard((shape: unknown, sql: unknown, params: unknown, session: unknown) =>
+        Database.Dispatch(
+            request(pick(shapes, shape, "shape"), { sql: Args.Sql(sql), values: Args.Params(params), session: Args.Session(session) }),
+        ),
+    ),
+);
 
-    return (query: unknown, parameters: unknown) => {
-        if (!isBatch(op, parameters)) return answer(op, query as string, values(parameters));
-        if (parameters.length >= 16) return Database.DispatchAsync("prepareMany", query as string, undefined, parameters).then(answered, failed);
-        return answer("prepareMany", query as string, undefined, parameters);
-    };
+exports(
+    "batch",
+    guard((statements: unknown) => {
+        const batch = Args.Statements(statements);
+        if (batch.length === 0) return [true];
+        return Database.Dispatch(request("batch", { batch }));
+    }),
+);
+
+exports(
+    "checkout",
+    guard(() => Database.Dispatch(request("checkout"))),
+);
+
+exports(
+    "release",
+    guard((session: unknown, mode: unknown) => {
+        const id = Args.Session(session);
+        if (id == null) throw new CodedError("BAD_ARGUMENT", "session must be a positive integer");
+        return Database.Dispatch(request(pick(releaseModes, mode, "mode"), { session: id }));
+    }),
+);
+
+const connectRetryMs = 10000;
+
+function untilReady(): Promise<Answer> {
+    return Database.Ready().then(
+        (): Answer => [true],
+        () => new Promise<Answer>((resolve) => setTimeout(() => resolve(untilReady()), connectRetryMs)),
+    );
 }
 
-const ops: [string, WorkerOp, unknown?][] = [
-    ["query", "query"],
-    ["single", "row"],
-    ["scalar", "scalar"],
-    ["insert", "insert"],
-    ["update", "update"],
-    ["prepare", "prepare"],
-    ["transaction", "transaction", false],
-];
+let waiting: Promise<Answer> | undefined;
+const ready = (): Answer | Promise<Answer> => (Database.Connected() ? [true] : (waiting ??= untilReady()));
 
-for (const [name, op, failure] of ops) {
-    exports(name, bridge(op, failure ?? null));
-    exports(`sync_${name}`, syncBridge(op));
-}
+exports("ready", ready);
 
-exports("awaitConnection", () => Database.Ready().then(() => true));
+on("onResourceStop", (resource: string) => {
+    if (resource !== GetCurrentResourceName() && Database.Connected()) Database.Dispatch({ ...request("releaseAll"), resource });
+});
 
-Database.Ready();
+ready();

@@ -1,92 +1,97 @@
-import type { Connection, Pool, QueryOptions } from "mariadb";
+import type { Connection, Pool, PoolConnection } from "mariadb";
+import type { Sessions } from "./sessions";
+
 import { Inline } from "./inline";
-import type { Dictionary, OkPacket, QueryValues } from "types/database";
 
-export type WorkerOp = "query" | "scalar" | "row" | "insert" | "update" | "batch" | "transaction" | "prepare" | "prepareMany";
+export type Shape = "run" | "one" | "value" | "all";
+export type Op = Shape | "batch" | "checkout" | "release" | "commit" | "rollback" | "releaseAll";
 
-export type TransactionStatement = string | [sql: string, values?: QueryValues];
+export type Statement = [sql: string, values: unknown[] | null];
 
-// Single-statement ops also run on a plain connection; transactions and batches always get the pool.
-export async function RunOp(
-    pool: Pool | Connection,
-    op: WorkerOp,
-    query: string | QueryOptions,
-    values?: QueryValues,
-    batches?: unknown[],
-    multiPool?: Pool,
-): Promise<unknown> {
+export interface Request {
+    op: Op;
+    sql: string;
+    values: unknown[] | null;
+    batch: Statement[] | null;
+    session: number | null;
+    resource: string;
+}
+
+export interface Target {
+    pool: Pool;
+    sessions: Sessions;
+    // Pool with multipleStatements enabled; without it batches pipeline one statement at a time.
+    multi?: Pool;
+}
+
+export function IsShape(op: Op): op is Shape {
+    return op === "run" || op === "one" || op === "value" || op === "all";
+}
+
+// `connection` is the worker's dedicated fast connection, when it may take this request.
+export async function RunOp(target: Target, request: Request, connection?: Connection): Promise<unknown> {
+    const { op, session } = request;
+
     switch (op) {
-        case "query":
-            return pool.query(query, values);
-        case "row": {
-            const rows = (await pool.query(query, values)) as Dictionary[];
-            return rows?.[0] ?? null;
+        case "run":
+        case "one":
+        case "value":
+        case "all": {
+            const runner = connection ?? (session != null ? target.sessions.Get(session) : target.pool);
+            return shape(op, await runner.query(request.sql, request.values ?? undefined));
         }
-        case "scalar": {
-            const rows = (await pool.query(query, values)) as Dictionary[];
-            return firstColumn(rows?.[0]);
+        case "batch": {
+            const statements = request.batch ?? [];
+            return target.multi ? transactMulti(target.multi, statements) : transact(target.pool, statements);
         }
-        case "insert":
-            return ((await pool.query(query, values)) as OkPacket).insertId;
-        case "update":
-            return ((await pool.query(query, values)) as OkPacket).affectedRows;
-        case "batch":
-            return pool.batch(query, values);
-        case "transaction":
-            return multiPool
-                ? transactMulti(multiPool, (batches ?? []) as TransactionStatement[])
-                : transact(pool as Pool, (batches ?? []) as TransactionStatement[]);
-        case "prepare":
-            return unwrap(await pool.query(query, values));
-        case "prepareMany":
-            return prepareMany(pool as Pool, query, batches as QueryValues[]);
+        case "checkout":
+            return target.sessions.Checkout(request.resource);
+        case "release":
+        case "rollback":
+            return target.sessions.Release(session ?? 0, false);
+        case "commit":
+            return target.sessions.Release(session ?? 0, true);
+        case "releaseAll":
+            target.sessions.ReleaseAll(request.resource);
+            return true;
         default:
-            throw new Error(`Unknown database op "${op satisfies never}"`);
+            throw new Error(`Unknown op "${op satisfies never}"`);
     }
 }
 
-// Each set goes straight onto one of the idle connections, held for the batch, so the connector
-// pipelines them instead of paying a pool acquire/release (and waiting for the previous reply) per
-// set. Only idle ones are taken, so holding them can never wait on a connection it holds itself.
-async function prepareMany(pool: Pool, query: string | QueryOptions, sets: QueryValues[]) {
-    const count = Math.max(1, Math.min(sets.length, pool.idleConnections()));
-    const connections = await Promise.all(Array.from({ length: count }, () => pool.getConnection()));
-    const results = new Array<unknown>(sets.length);
-    const pending: Promise<unknown>[] = [];
-
-    for (let i = 0; i < sets.length; i++) {
-        pending.push(connections[i % count]!.query(query, sets[i]).then((rows) => (results[i] = unwrap(rows))));
+function shape(op: Shape, result: unknown): unknown {
+    if (op === "run") {
+        if (Array.isArray(result) || typeof result !== "object" || result === null) return [0, null];
+        const affected = "affectedRows" in result && typeof result.affectedRows === "number" ? result.affectedRows : 0;
+        const insertId = "insertId" in result && typeof result.insertId === "number" && result.insertId !== 0 ? result.insertId : null;
+        return [affected, insertId];
     }
 
-    try {
-        await Promise.all(pending);
-        return results;
-    } finally {
-        // A failed set must not hand back connections that still have sets queued on them.
-        await Promise.allSettled(pending);
-        for (const connection of connections) connection.release();
-    }
+    const rows: unknown[] = Array.isArray(result) ? result : [];
+    if (op === "all") return rows;
+
+    const row = rows[0];
+    if (typeof row !== "object" || row === null) return null;
+    if (op === "one") return row;
+    for (const key in row) return Reflect.get(row, key) ?? null;
+    return null;
 }
 
-async function transact(pool: Pool, statements: TransactionStatement[]) {
+async function transact(pool: Pool, statements: Statement[]) {
     const connection = await pool.getConnection();
 
     try {
         // Issued without awaiting so the connector pipelines them. COMMIT is only sent once every
         // statement succeeded; on failure ROLLBACK queues behind the still-running statements.
         const pending: Promise<unknown>[] = [connection.query("START TRANSACTION")];
-
-        for (const statement of statements) {
-            if (typeof statement === "string") pending.push(connection.query(statement));
-            else pending.push(connection.query(statement[0], statement[1]));
-        }
+        for (const [sql, values] of statements) pending.push(connection.query(sql, values ?? undefined));
 
         for (const p of pending) p.catch(() => undefined);
         await Promise.all(pending);
         await connection.query("COMMIT");
         return true;
     } catch (error) {
-        await connection.query("ROLLBACK").catch(() => undefined);
+        await rollback(connection);
         throw error;
     } finally {
         connection.release();
@@ -96,15 +101,15 @@ async function transact(pool: Pool, statements: TransactionStatement[]) {
 const statementsPerPacket = 1000;
 // Statements are inlined and sent as a few multi-statement COM_QUERYs. MariaDB stops a
 // multi-statement at its first error; later chunks may still run, and ROLLBACK undoes them all.
-async function transactMulti(pool: Pool, statements: TransactionStatement[]) {
+async function transactMulti(pool: Pool, statements: Statement[]) {
     const connection = await pool.getConnection();
 
     try {
         const pending: Promise<unknown>[] = [];
         let chunk = ["START TRANSACTION"];
 
-        for (const statement of statements) {
-            const sql = typeof statement === "string" ? statement : Inline(connection, statement[0], statement[1]);
+        for (const [statement, values] of statements) {
+            const sql = Inline(connection, statement, values);
             chunk.push(endsClean(sql) ? sql : sql.replace(/[\s;]+$/, ""));
             if (chunk.length === statementsPerPacket) {
                 pending.push(connection.query(chunk.join(";")));
@@ -118,41 +123,19 @@ async function transactMulti(pool: Pool, statements: TransactionStatement[]) {
         await connection.query(chunk.join(";"));
         return true;
     } catch (error) {
-        await connection.query("ROLLBACK").catch(() => undefined);
+        await rollback(connection);
         throw error;
     } finally {
         connection.release();
     }
 }
 
+function rollback(connection: PoolConnection) {
+    return connection.query("ROLLBACK").catch(() => undefined);
+}
+
 // Statements rarely end in whitespace or ";", so the trimming regex only runs when one does.
 function endsClean(sql: string) {
     const c = sql.charCodeAt(sql.length - 1);
     return c !== 59 && c > 32 && c < 127;
-}
-
-function firstColumn<T>(row: Dictionary | undefined): T | null {
-    if (!row) return null;
-
-    for (const key in row) {
-        return row[key] as T;
-    }
-
-    return null;
-}
-
-// oxmysql's prepare unwraps one row/one column to the value, one row to the row.
-export function unwrap(rows: unknown) {
-    const list = rows as Dictionary[];
-    if (list.length === 0) return null;
-    if (list.length > 1) return list;
-
-    const row = list[0]!;
-    let only: unknown;
-    let count = 0;
-    for (const key in row) {
-        only = row[key];
-        if (++count > 1) return row;
-    }
-    return only;
 }

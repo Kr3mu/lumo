@@ -1,21 +1,16 @@
-import type { WorkerOp } from "./ops";
-import type { QueryOptions } from "mariadb";
-import type { QueryValues } from "types/database";
+import type { Request, Op, Statement } from "./ops";
+import type { WorkerMessage } from "./worker-host";
 
-import { RunOp } from "./ops";
+import { IsShape, RunOp } from "./ops";
+import { Sessions } from "./sessions";
+import { ToLumoError } from "./errors";
 import { createConnection, createPool, type Connection } from "mariadb";
 import { Decode, Encode, Rollback } from "./wire";
 import { Handoff, Slot, done, headerBytes, replyBytes, requestBytes } from "./sync";
 import { parentPort, receiveMessageOnPort, workerData } from "node:worker_threads";
 
-interface WorkerRequest {
-    id: number;
-    op: WorkerOp;
-    query: string | QueryOptions;
-    values?: QueryValues;
-    batches?: unknown[];
-    sync?: boolean;
-}
+type WorkerRequest = Request & { id: number; sync?: boolean };
+type Encoded = [id: number, op: Op, sql: string, values: unknown[] | null, batch: Statement[] | null, session: number | null, resource: string];
 
 const ctl = new Int32Array(workerData.shared, 0, headerBytes >> 2);
 const request = Buffer.from(workerData.shared, headerBytes, requestBytes);
@@ -24,9 +19,19 @@ const port = parentPort!;
 // Long enough to catch the next await from a Lua loop (~50 us later), short enough to stay cheap when idle.
 const spinMs = 0.25;
 
+function post(message: WorkerMessage) {
+    port.postMessage(message);
+}
+
 const pool = createPool(workerData.config);
-// Kept apart so multipleStatements never applies to ordinary queries.
-const multiPool = createPool({ ...workerData.config, multipleStatements: true, connectionLimit: 2 });
+const target = {
+    pool,
+    // Kept apart so multipleStatements never applies to ordinary queries.
+    multi: createPool({ ...workerData.config, multipleStatements: true, connectionLimit: 2 }),
+    sessions: new Sessions(pool, workerData.checkoutTimeoutMs, (id, resource, heldMs) =>
+        post({ log: `[lumo] Session ${id} of ${resource} timed out after ${heldMs.toFixed(0)}ms and was rolled back` }),
+    ),
+};
 
 let inFlight = 0;
 
@@ -57,8 +62,8 @@ function openDirect() {
 
 openDirect();
 
-function directFor(op: WorkerOp, sync?: boolean): Connection | undefined {
-    if (!sync || !direct || directBusy || op === "transaction" || op === "prepareMany" || op === "batch") return undefined;
+function directFor(req: WorkerRequest): Connection | undefined {
+    if (!req.sync || !direct || directBusy || req.session != null || !IsShape(req.op)) return undefined;
     if (!direct.isValid()) return undefined;
 
     const now = performance.now();
@@ -92,46 +97,29 @@ function replySync(id: number, status: number, value: unknown) {
     return true;
 }
 
-function failure(error: unknown) {
-    const err = error as Record<string, unknown>;
-    return {
-        message: String(err?.message ?? error).slice(0, 2000),
-        code: err?.code ?? null,
-        errno: err?.errno ?? null,
-        sqlState: err?.sqlState ?? null,
-        sql: typeof err?.sql === "string" ? err.sql.slice(0, 2000) : null,
-    };
-}
-
-async function handle(id: number, op: WorkerOp, query: string | QueryOptions, values?: QueryValues, batches?: unknown[], sync?: boolean) {
-    const started = sync ? 0 : performance.now();
+async function handle(req: WorkerRequest) {
     let ok = true;
     let result: unknown;
 
-    const connection = directFor(op, sync);
+    const connection = directFor(req);
     if (connection) directBusy = true;
 
     inFlight++;
     try {
-        result = await RunOp(connection ?? pool, op, query, values, batches, multiPool);
+        result = await RunOp(target, req, connection);
     } catch (error) {
         ok = false;
-        result = failure(error);
+        result = ToLumoError(error);
     }
     inFlight--;
     if (connection) directBusy = false;
 
-    if (sync && replySync(id, ok ? 1 : 0, result)) {
+    if (req.sync && replySync(req.id, ok ? 1 : 0, result)) {
         if (inFlight === 0) spin();
         return;
     }
 
-    const duration = sync ? 0 : performance.now() - started;
-    port.postMessage(ok ? { id, ok, result, duration } : { id, ok, duration, ...(result as object) });
-}
-
-function onMessage(message: WorkerRequest) {
-    handle(message.id, message.op, message.query, message.values, message.batches, message.sync);
+    post(ok ? { id: req.id, ok, result } : { id: req.id, ok, error: ToLumoError(result) });
 }
 
 // Busy-waits for the server thread's next sync request; an async request arriving meanwhile ends it.
@@ -157,14 +145,18 @@ function spin() {
         }
     }
 
-    if (message) onMessage(message.message);
+    if (message) handle(message.message);
 }
 
 function take() {
     const length = ctl[Slot.RequestLength]!;
-    const decoded = length < 0 ? undefined : (Decode(request, length) as [number, WorkerOp, string | QueryOptions, QueryValues | null, unknown[] | null]);
+    // Written by RequestSync in worker-host.ts from an already validated Request.
+    const decoded = length < 0 ? undefined : (Decode(request, length) as Encoded);
     Atomics.store(ctl, Slot.Handoff, Handoff.Idle);
-    if (decoded) handle(decoded[0], decoded[1], decoded[2], decoded[3] ?? undefined, decoded[4] ?? undefined, true);
+    if (!decoded) return;
+
+    const [id, op, sql, values, batch, session, resource] = decoded;
+    handle({ id, op, sql, values, batch, session, resource, sync: true });
 }
 
-port.on("message", onMessage);
+port.on("message", handle);
