@@ -8,7 +8,7 @@ const languages = {
             /(--\[\[[\s\S]*?\]\]|--[^\n]*)|(\[\[[\s\S]*?\]\]|'(?:\\.|[^'\\\n])*'|"(?:\\.|[^"\\\n])*")|(\b0x[0-9a-fA-F]+\b|\b\d+(?:\.\d+)?\b)|(<close>|<const>)|([A-Za-z_][A-Za-z0-9_]*)/g,
         keywords:
             /^(local|function|end|if|then|else|elseif|for|in|do|while|return|not|and|or|nil|true|false|break|repeat|until|goto)$/,
-        // Lua calls a function with ( or directly with a string or table literal: DB.statement 'SELECT 1'
+        // Lua calls a function with ( or directly with a string or table literal: Database.value 'SELECT 1'
         call: /^\s*[('"{]|^\s*\[\[/,
     },
     ts: {

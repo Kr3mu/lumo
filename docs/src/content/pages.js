@@ -400,7 +400,7 @@ export const pages = {
         blocks: [
             { t: "tabs", tabs: [
                 { label: "oxmysql", lang: "lua", s: "local player = MySQL.single.await('SELECT * FROM players WHERE license = ?', { license })\n\nlocal id = MySQL.insert.await('INSERT INTO crews (tag, name) VALUES (?, ?)', { tag, name })\n\nMySQL.update.await('UPDATE players SET money = money + ? WHERE id = ?', { 500, player.id })\n\nlocal ok = MySQL.transaction.await({\n    { 'UPDATE players SET money = money - ? WHERE id = ?', { price, buyer } },\n    { 'INSERT INTO inventory (player_id, item) VALUES (?, ?)', { buyer, item } },\n})" },
-                { label: "Lumo", lang: "lua", s: "local Players   = Database.table('players')\nlocal Crews     = Database.table('crews')\nlocal Inventory = Database.table('inventory')\n\nlocal player = Players:find({ license = license })\n\nlocal id = Crews:insert({ tag = tag, name = name })\n\nPlayers:increment(player.id, { money = 500 })\n\nDB.batch(function()\n    Players:increment(buyer, { money = -price })\n    Inventory:insert({ player_id = buyer, item = item })\nend)" },
+                { label: "Lumo", lang: "lua", s: "local Players   = Database.table('players')\nlocal Crews     = Database.table('crews')\nlocal Inventory = Database.table('inventory')\n\nlocal player = Players:find({ license = license })\n\nlocal id = Crews:insert({ tag = tag, name = name })\n\nPlayers:increment(player.id, { money = 500 })\n\nDatabase.batch(function()\n    Players:increment(buyer, { money = -price })\n    Inventory:insert({ player_id = buyer, item = item })\nend)" },
             ] },
             { t: "h2", id: "mapping", s: "Call by call" },
             { t: "table", mono: [0, 1], head: ["oxmysql", "Lumo", "Difference"], rows: [
