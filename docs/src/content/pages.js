@@ -16,7 +16,7 @@ export const groups = [
     { title: "Getting started", pages: ["introduction", "installation", "configuration"] },
     { title: "Guide", pages: ["tables", "reading", "writing", "raw-sql", "errors", "transactions", "batches", "sessions", "threads"] },
     { title: "API reference", pages: ["api-db", "api-table", "types"] },
-    { title: "More", pages: ["performance", "vs-oxmysql", "architecture", "migrating", "faq"] },
+    { title: "More", pages: ["performance", "why-fast", "vs-oxmysql", "architecture", "migrating", "faq"] },
 ];
 
 export const pages = {
@@ -391,6 +391,70 @@ export const pages = {
             ] },
             { t: "h2", id: "chatty", s: "What it avoids" },
             { t: "diagram", name: "chatty" },
+        ],
+    },
+
+    "why-fast": {
+        title: "Why Lumo is fast",
+        lede: "No single trick. Each step of a query lost a little less time, and every step was measured before it was kept. These are the ones that mattered, with the numbers they moved.",
+        blocks: [
+            { t: "h2", id: "idea", s: "The idea" },
+            { t: "p", s: "A small indexed query takes MariaDB 50–80 µs. Everything else in a FiveM database call is getting the request from Lua into the driver and the answer back. Lumo treats that path as the thing to optimise: make the crossing cheap, make it happen once, and never wait for a tick you don't need." },
+            { t: "diagram", name: "callpath" },
+
+            { t: "h2", id: "inline", s: "1. The answer comes back inside the call" },
+            { t: "p", s: "Most drivers hand Lua a callback and resume the coroutine on a later tick. Lumo's main thread passes the request to its worker through a `SharedArrayBuffer` and waits for the reply with `Atomics.wait`, up to `lumo_inline_budget_ms` (2 ms). A fast query's result becomes the export's return value: no callback, no promise, and the Lua coroutine never yields." },
+            { t: "table", mono: [1], head: ["Step", "Effect"], rows: [
+                ["Callback and resume on a later tick → answer inside the call", "small reads from ~1.0 ms to ~0.2 ms on the same driver"],
+                ["A slow query", "still continues async after the budget; the server thread is held at most 2 ms"],
+            ] },
+
+            { t: "h2", id: "crossing", s: "2. One cheap crossing per query" },
+            { t: "list", items: [
+                "**Raw function references.** The Lua module fetches each export's function once and calls it directly, skipping the exports proxy's closure, `pcall` and result repacking on every call: 23–31 µs per call.",
+                "**No Lua function crosses the bridge.** A callback per call has to be serialised as a function reference and called back across runtimes. Lumo passes four flat values (shape, SQL, params, session) and gets one array back.",
+                "**Objects stay in Lua.** Table calls build their SQL and value list in Lua, where it costs microseconds, then make exactly one call. A mysqli-style API with a call per bind or fetch would make ten or more.",
+            ] },
+
+            { t: "h2", id: "handoff", s: "3. Getting work to the worker without waking it" },
+            { t: "p", s: "After each answer the worker spins for 0.25 ms. A request that arrives while it spins is written straight into shared memory and picked up immediately, skipping `postMessage` and the event-loop wake-up: 12–22 µs per call. The cost is a quarter-millisecond of busy-waiting on the worker's core, never on the server thread." },
+
+            { t: "h2", id: "encoding", s: "4. A small reply format" },
+            { t: "p", s: "Replies through shared memory use a compact binary format with a key table, so a column name is sent once per reply instead of once per row. Values the format can't carry (Buffer, Date, BigInt) fall back to v8 serialisation, so types never change between the fast and slow paths." },
+            { t: "table", mono: [1, 2], head: ["Reply", "v8 serialisation", "Lumo format"], rows: [
+                ["scalar", "3.58 µs", "0.5–0.9 µs"],
+                ["one row", "4.65 µs", "0.7 µs"],
+                ["10 rows", "9.84 µs", "3.0 µs"],
+            ] },
+
+            { t: "h2", id: "connection", s: "5. A connection that is always ready" },
+            { t: "p", s: "Pools validate a connection that has been idle for a while with an extra ping before using it, and on a quiet server almost every query hits that. Single fast queries use a dedicated connection that skips the ping: spread-out queries went from 455–480 µs to 251–341 µs." },
+
+            { t: "h2", id: "batches", s: "6. Transactions in one round trip" },
+            { t: "p", s: "A transaction written as a list of statements goes to MariaDB as one multi-statement query per ~1 MB chunk, instead of one round trip per statement. MariaDB stops at the first error and Lumo rolls back, so it is still all-or-nothing." },
+            { t: "table", mono: [1, 2], head: ["", "One round trip per statement", "Multi-statement"], rows: [
+                ["10,000 inserts", "14.10 s (oxmysql)", "258 ms"],
+                ["2-write transaction", "5.70–6.03 ms (oxmysql)", "1.23–1.57 ms"],
+            ] },
+
+            { t: "h2", id: "less-work", s: "7. Doing less work per query" },
+            { t: "list", items: [
+                "**SQL is cached per call shape.** `Players:find({ license = l })` builds its SQL once; later calls only bind values.",
+                "**Client-side binding.** Values are escaped into the SQL text instead of using server-side prepared statements, which need an extra round trip. Measured end to end, prepared statements were not faster here.",
+                "**Decode only what the shape needs.** `value` reads one cell; a write reads no rows at all.",
+            ] },
+
+            { t: "h2", id: "rejected", s: "What didn't make it" },
+            { t: "p", s: "Every idea was measured before it was kept. These were built, tested and dropped because they made no measurable difference, or made things worse:" },
+            { t: "list", items: [
+                "Server-side prepared statements (`execute`): slower on `SELECT 1`, mixed elsewhere.",
+                "Letting the worker park with `Atomics.waitAsync` after its spin: hung under sustained load.",
+                "Larger socket buffers and non-blocking receives (in the C# prototype): no difference across repeated runs.",
+                "Sending statements as numeric ids instead of SQL text: no difference for normal-length SQL.",
+            ] },
+
+            { t: "h2", id: "floor", s: "The floor" },
+            { t: "p", s: "What's left per small query is the runtime's own Lua → Node crossing (about 40 µs) and MariaDB itself (50–80 µs for a read, 1.0–1.4 ms for a write while it flushes the commit to disk). Lumo's own bridge code is about 30 µs of a call. Bulk work runs at the speed of MariaDB executing the same SQL from a console client." },
         ],
     },
 
