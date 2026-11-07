@@ -1,0 +1,11 @@
+{
+  "name": "lumo",
+  "private": true,
+  "description": "MariaDB driver for FiveM: Node worker driver and Lua Database module",
+  "scripts": {
+    "build": "bun build src/server.ts --target=node --format=cjs --minify-syntax --minify-whitespace --outfile dist/server.js && bun build src/lib/server/database/worker.ts --target=node --format=cjs --minify-syntax --minify-whitespace --outfile dist/dbworker.cjs"
+  },
+  "dependencies": {
+    "mariadb": "3.5.4"
+  }
+}
