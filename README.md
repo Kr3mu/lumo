@@ -33,9 +33,9 @@ Most of the time in a FiveM database call is not spent in the database. A small 
 - **Transactions done right.** `Database.transaction(fn)` pins one connection to your function, commits on return and
   rolls back on error. `Database.batch(fn)` sends many writes as one multi-statement round trip.
 - **SQL when you need it.** Joins, aggregates and reports use `Database.one`, `all`, `value` and `exec`.
-- **Strict by default.** Each table's columns are read once; a misspelled column or a value of the wrong type fails
-  in Lua with the column's name (`players.licnese does not exist (did you mean license?)`). It costs about 1 µs a call;
-  `set lumo_strict false` or `Database.table(name, { strict = false })` turns it off.
+- **Tables defined in code.** `Database.define` creates the table and writes Lua types from the definition, so the
+  editor knows each column and its type and flags `Players:find({ licnese = l })` or `{ money = 'lots' }` while you
+  type. Optional runtime checks (`set lumo_strict true`, about 1 µs a call) cover values the editor can't see.
 - **Safe by construction.** Values are always bound; column names are checked; `orderBy` only accepts
   `column [ASC|DESC]`; a write with an empty filter refuses to touch every row.
 
@@ -143,7 +143,8 @@ if not ok and err.code == Database.Error.DUPLICATE_ENTRY then print('tag taken')
 
 | Call | Returns |
 |---|---|
-| `Database.table(name, { key = 'id', strict = true })` | a table repository |
+| `Database.define(name, { column = 'type options', ... }, options)` | a table repository; creates the table and writes its types |
+| `Database.table(name, { key = 'id', strict = false })` | a table repository |
 | `T:get(key, { columns, lock })` / `T:find(where, { columns, orderBy, lock })` | row or `nil` |
 | `T:list({ where, columns, orderBy, limit, offset })` | array of rows |
 | `T:count(where)` / `T:exists(where)` | integer / boolean |
@@ -151,6 +152,7 @@ if not ok and err.code == Database.Error.DUPLICATE_ENTRY then print('tag taken')
 | `T:update(key, changes)` / `T:increment(key, deltas)` / `T:upsert(row, { update })` / `T:delete(key)` | affected rows |
 | `T:updateWhere(where, changes)` / `T:deleteWhere(where)` | affected rows; empty `where` raises, pass `Database.all_rows` |
 | `Database.one / all / value / exec(sql, ...)` | row / rows / value / affected, insert id |
+| `Database.each(sql, sets, shape)` | one result per parameter set, in one call |
 | `Database.transaction(fn, ...)` | `fn`'s return values |
 | `Database.batch(fn)` | `true` |
 | `local s <close> = Database.session()` | a connection pinned to this thread |
@@ -160,6 +162,34 @@ if not ok and err.code == Database.Error.DUPLICATE_ENTRY then print('tag taken')
 
 `where` tables match by equality (joined with AND); an array value becomes `IN (…)` and `Database.null` matches
 `NULL`. The full documentation is at [lumo.kr3mu.dev](https://lumo.kr3mu.dev); its source is in `docs/` (`cd docs && bun install && bun run dev`, deploy with `bun run deploy`).
+
+## Defining tables
+
+```lua
+local Accounts = Database.define('bank_accounts', {
+    id         = 'id',
+    owner      = 'string(60) unique',
+    balance    = 'int = 0',
+    frozen     = 'bool = false',
+    created_at = 'datetime = now',
+})
+
+local Transactions = Database.define('bank_transactions', {
+    id         = 'id',
+    account_id = 'uint -> bank_accounts.id cascade',
+    amount     = 'int',
+    kind       = 'enum(deposit, withdraw, transfer_in, transfer_out)',
+    note       = 'string(100)?',
+    created_at = 'datetime = now',
+})
+```
+
+Columns are NOT NULL unless the type ends in `?`; options are `= default`, `unique`, `index`, `primary`,
+`-> table.column` (with `cascade`, `nullify` or `restrict`), `on update now`, and `sql: …` for anything else. Lumo
+creates the tables if they are missing (calls on them wait until they exist) and, every time the resource starts,
+writes `lumo.d.lua` at its root with Lua types built from the definitions. With a Lua language server, rows have
+their column types and a misspelled column, a wrong value type or a missing required column is flagged while you
+type. With `require '@lumo'`, add `---@type Lumo.Database` above the require. A full example is in `examples/lumo_bank`.
 
 ## Configuration
 
@@ -171,17 +201,21 @@ if not ok and err.code == Database.Error.DUPLICATE_ENTRY then print('tag taken')
 | `lumo_slow_query_ms` | `150` | slower queries are logged with resource and SQL |
 | `lumo_checkout_timeout_ms` | `10000` | a held session or transaction older than this is rolled back |
 | `lumo_debug` | `false` | log every call |
-| `lumo_strict` | `true` | check table calls against each table's columns; per table: `{ strict = false }` |
+| `lumo_strict` | `false` | also check table calls at runtime; per table: `{ strict = true }` |
 
 ## Performance
 
-From the benchmarks that led to Lumo (Legacy FXServer, MariaDB 12.3.3, same machine, median of 5 rounds):
+The oxmysql documentation benchmark, unmodified, through Lumo's public Lua API (Legacy FXServer, MariaDB 12.3.3,
+same machine, median of 7 rounds), and the table API on 10,000 indexed players (median of 5 rounds):
 
-| | Lumo's bridge | oxmysql 2.14.3 |
+| | Lumo | oxmysql 2.14.3 |
 |---|---|---|
-| oxmysql documentation benchmark, total | **517 ms** | 17.82 s |
-| 10,000 inserts in one transaction | **258 ms** | 14.10 s |
-| small reads (scalar, single, query) | **108–203 µs** | 1.36–1.72 ms |
+| oxmysql documentation benchmark, total | **547 ms** | 17.89 s |
+| 10,000 inserts in one transaction | **270 ms** | 14.11 s |
+| 2,500 lookups (`Database.each`) | **229 ms** | 3.71 s |
+| small reads (scalar, single, prepare, query) | **116–231 µs** | 1.48–1.55 ms |
+| `Players:find({ license = l })` | **115 µs** | 1.45 ms |
+| 2-write `Database.batch` | **1.19 ms** | 5.63 ms |
 
 The table API costs about the same as hand-written SQL: the SQL is cached per call shape.
 

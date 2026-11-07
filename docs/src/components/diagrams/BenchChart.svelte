@@ -14,10 +14,10 @@
             unit: "µs",
             format: us,
             rows: [
-                { label: "scalar", mdb: 203, ox: 1360 },
-                { label: "single", mdb: 169, ox: 1480 },
-                { label: "prepare", mdb: 115, ox: 1720 },
-                { label: "query", mdb: 108, ox: 1370 },
+                { label: "scalar", mdb: 231, ox: 1550 },
+                { label: "single", mdb: 174, ox: 1520 },
+                { label: "prepare", mdb: 130, ox: 1480 },
+                { label: "query", mdb: 116, ox: 1510 },
             ],
         },
         {
@@ -27,7 +27,7 @@
             ticks: [0, 5, 10, 15, 20],
             unit: "s",
             format: sec,
-            rows: [{ label: "total", mdb: 0.517, ox: 17.82 }],
+            rows: [{ label: "total", mdb: 0.547, ox: 17.89 }],
         },
     ];
 
@@ -52,7 +52,7 @@
     }
 </script>
 
-<DiagramFrame title="Lumo prototype vs oxmysql" onreplay={() => player.play(duration)}>
+<DiagramFrame title="Lumo vs oxmysql" onreplay={() => player.play(duration)}>
     <div class="legend">
         <span><i class="swatch mdb"></i>Lumo</span>
         <span><i class="swatch ox"></i>oxmysql 2.14.3</span>
@@ -97,7 +97,7 @@
     </div>
 
     {#snippet caption()}
-        <p>oxmysql documentation benchmark, Legacy FXServer, MariaDB 12.3.3, 5 rounds, median. Lumo figures are its Node prototype.</p>
+        <p>oxmysql documentation benchmark, Legacy FXServer, MariaDB 12.3.3, 7 rounds, median. Lumo figures are its public Lua API.</p>
     {/snippet}
 </DiagramFrame>
 
