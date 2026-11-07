@@ -38,8 +38,9 @@ Most of the time in a FiveM database call is not spent in the database. A small 
 
 ## Install
 
-Requirements: FXServer (Legacy, Node 22 runtime), MariaDB 11.4+, [ox_lib](https://github.com/overextended/ox_lib)
-for `require`, and `lua54 'yes'` in resources that use Lumo.
+Requirements: FXServer (Legacy, Node 22 runtime), MariaDB 11.4+, and [ox_lib](https://github.com/overextended/ox_lib)
+in resources that use Lumo. FiveM has no built-in `require`: listing `@ox_lib/init.lua` first in a manifest gives the
+resource ox_lib's `require`, which loads `@lumo` into it. Lumo then loads the rest of its own files itself.
 
 ### As its own resource
 
