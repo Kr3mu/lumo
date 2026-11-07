@@ -16,7 +16,7 @@ return function(Bridge, Context, Errors)
 
         if scope and scope.batch then
             if shape ~= Query.RUN then
-                Errors.raise('READ_IN_BATCH', 'reads cannot run inside Database.batch; read before the batch or use a transaction')
+                Errors.raise(Errors.codes.READ_IN_BATCH, 'reads cannot run inside Database.batch; read before the batch or use a transaction')
             end
             local batch = scope.batch
             batch[#batch + 1] = { sql, params }

@@ -15,7 +15,7 @@ return function(Errors, host)
         if fn then return fn end
 
         TriggerEvent(prefix .. name, function(exportData) fn = exportData end)
-        if not fn then Errors.raise('NOT_STARTED', ('the %s resource is not started, or its Lumo driver is not loaded'):format(host)) end
+        if not fn then Errors.raise(Errors.codes.NOT_STARTED, ('the %s resource is not started, or its Lumo driver is not loaded'):format(host)) end
 
         refs[name] = fn
         return fn

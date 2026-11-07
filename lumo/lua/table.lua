@@ -206,7 +206,7 @@ return function(Errors, Query, Sql)
     local function writeFilter(where, params)
         if where == Sql.ALL_ROWS then return '', 'all' end
         if type(where) ~= 'table' or next(where) == nil then
-            Errors.raise('EMPTY_WHERE', 'updateWhere/deleteWhere need a where table; pass Database.all_rows to touch every row')
+            Errors.raise(Errors.codes.EMPTY_WHERE, 'updateWhere/deleteWhere need a where table; pass Database.all_rows to touch every row')
         end
         local clause, key = Sql.where(where, params)
         return ' WHERE ' .. clause, key
@@ -231,7 +231,7 @@ return function(Errors, Query, Sql)
     function Table:upsert(row, options)
         local update = options and options.update
         if not update or #update == 0 then
-            Errors.raise('BAD_UPSERT', 'upsert needs { update = { ...columns } }: the columns to change when the row exists')
+            Errors.raise(Errors.codes.BAD_UPSERT, 'upsert needs { update = { ...columns } }: the columns to change when the row exists')
         end
 
         local columns, key = Sql.columns(row)

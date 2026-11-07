@@ -23,7 +23,7 @@ return function(Errors)
         if q then return q end
 
         if type(name) ~= 'string' or not name:match('^[%w_]+$') then
-            Errors.raise('BAD_IDENTIFIER', ('column or table name %q may only contain letters, digits and _'):format(tostring(name)))
+            Errors.raise(Errors.codes.BAD_IDENTIFIER, ('column or table name %q may only contain letters, digits and _'):format(tostring(name)))
         end
 
         q = '`' .. name .. '`'
@@ -67,7 +67,7 @@ return function(Errors)
     ---@return string clause, string key
     function Sql.where(where, params)
         local columns = Sql.columns(where)
-        if #columns == 0 then Errors.raise('EMPTY_WHERE', 'a where table needs at least one column') end
+        if #columns == 0 then Errors.raise(Errors.codes.EMPTY_WHERE, 'a where table needs at least one column') end
 
         local parts, keys = {}, {}
         for i = 1, #columns do
@@ -112,7 +112,7 @@ return function(Errors)
             local column, direction = part:match('^%s*([%w_]+)%s*(%a*)%s*$')
             local suffix = direction and directions[direction:lower()]
             if not column or not suffix then
-                Errors.raise('BAD_ORDER_BY', ('orderBy %q must be "column [ASC|DESC]" separated by commas'):format(orderBy))
+                Errors.raise(Errors.codes.BAD_ORDER_BY, ('orderBy %q must be "column [ASC|DESC]" separated by commas'):format(orderBy))
             end
             parts[#parts + 1] = Sql.ident(column) .. suffix
         end
