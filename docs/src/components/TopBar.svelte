@@ -17,7 +17,7 @@
         <span class="mark">Lumo</span>
         <span class="docs">docs</span>
     </a>
-    <span class="chip">design preview</span>
+    <span class="chip">v0.1</span>
     <div class="spacer"></div>
     <Search />
     <button class="icon" aria-label="Theme: {theme}" title="Theme: {theme}" onclick={oncycletheme}>

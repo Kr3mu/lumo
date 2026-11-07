@@ -24,7 +24,7 @@ export const pages = {
         title: "Introduction",
         lede: "Lumo is a MariaDB driver for FiveM servers. You work with tables as Lua objects, write no SQL for everyday reads and writes, and every query costs exactly one call into the driver.",
         blocks: [
-            { t: "note", kind: "info", s: "This is a design preview. The API is the proposed shape of the library; the speed figures come from the prototype drivers and the syntax benchmark in sqlbench." },
+            { t: "note", kind: "info", s: "Lumo 0.1. Every behaviour on these pages is covered by an end-to-end suite that runs in FXServer against MariaDB, in both the standalone and the monorepo layout. Speed figures come from the benchmarks that led to Lumo." },
             { t: "code", lang: "lua", title: "server/players.lua", s: "local Database = require '@lumo'\nlocal Players = Database.table('players')\n\nAddEventHandler('playerJoining', function()\n    local player = Players:find({ license = GetPlayerIdentifierByType(source, 'license') })\n    print(player and player.money)\nend)" },
             { t: "h2", id: "why", s: "Why another driver" },
             { t: "p", s: "Most of the time in a FiveM database call is not spent in the database. A small SELECT takes MariaDB 50–80 µs; getting the request from Lua into the driver and the answer back is what costs. Lumo is built around that measurement." },
