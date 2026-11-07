@@ -1,0 +1,18 @@
+# Copy to server.cfg next to your FXServer data and fill in the license key.
+# Resources needed: ox_lib, lumo (../lumo) and lumo_test (./lumo_test).
+sv_licenseKey "changeme"
+sv_lan 1
+endpoint_add_tcp "127.0.0.1:30120"
+endpoint_add_udp "127.0.0.1:30120"
+
+set lumo_connection_string "mysql://root@localhost/lumo_test"
+set lumo_checkout_timeout_ms 10000
+add_unsafe_worker_permission lumo
+
+# Lets the test stop the server when it finishes.
+set lumo_test_quit 1
+add_ace resource.lumo_test command.quit allow
+
+ensure ox_lib
+ensure lumo
+ensure lumo_test
