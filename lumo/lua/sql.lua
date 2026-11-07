@@ -38,6 +38,24 @@ return function(Errors)
         return value
     end
 
+    -- Parameter sets for Database.each. A set is copied only when it holds Database.null, which can't cross as is.
+    ---@param sets any[][]
+    ---@return any[][]
+    function Sql.sets(sets)
+        for i = 1, #sets do
+            local set = sets[i]
+            for j = 1, #set do
+                if set[j] == Sql.NULL then
+                    local copy = {}
+                    for k = 1, #set do copy[k] = Sql.param(set[k]) end
+                    sets[i] = copy
+                    break
+                end
+            end
+        end
+        return sets
+    end
+
     -- Values passed as varargs to raw SQL calls; select('#') keeps trailing and middle nils as NULL.
     function Sql.pack(...)
         local n = select('#', ...)

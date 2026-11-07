@@ -4,7 +4,10 @@ import type { Sessions } from "./sessions";
 import { Inline } from "./inline";
 
 export type Shape = "run" | "one" | "value" | "all";
-export type Op = Shape | "batch" | "checkout" | "release" | "commit" | "rollback" | "releaseAll";
+export type EachOp = "eachRun" | "eachOne" | "eachValue" | "eachAll";
+export type Op = Shape | EachOp | "batch" | "checkout" | "release" | "commit" | "rollback" | "releaseAll";
+
+const eachShapes: Record<EachOp, Shape> = { eachRun: "run", eachOne: "one", eachValue: "value", eachAll: "all" };
 
 export type Statement = [sql: string, values: unknown[] | null];
 
@@ -22,6 +25,8 @@ export interface Target {
     sessions: Sessions;
     // Pool with multipleStatements enabled; without it batches pipeline one statement at a time.
     multi?: Pool;
+    // The pool's connection limit: how many lanes Database.each may spread over.
+    lanes: number;
 }
 
 export function IsShape(op: Op): op is Shape {
@@ -40,6 +45,11 @@ export async function RunOp(target: Target, request: Request, connection?: Conne
             const runner = connection ?? (session != null ? target.sessions.Get(session) : target.pool);
             return shape(op, await runner.query(request.sql, request.values ?? undefined));
         }
+        case "eachRun":
+        case "eachOne":
+        case "eachValue":
+        case "eachAll":
+            return each(target, request, eachShapes[op]);
         case "batch": {
             const statements = request.batch ?? [];
             return target.multi ? transactMulti(target.multi, statements) : transact(target.pool, statements);
@@ -75,6 +85,51 @@ function shape(op: Shape, result: unknown): unknown {
     if (op === "one") return row;
     for (const key in row) return Reflect.get(row, key) ?? null;
     return null;
+}
+
+// One statement, many parameter sets. The sets are spread over up to all of the pool's connections (one lane per
+// connection, at least setsPerLane sets each; the pool opens any it hasn't yet) and every lane pipelines its slice, so MariaDB works on several at
+// once. In a session everything stays on the session's connection. Results come back in the order of the sets.
+const setsPerLane = 32;
+
+async function each(target: Target, request: Request, op: Shape): Promise<unknown[]> {
+    const sets = (request.values ?? []) as unknown[][];
+    const results = new Array<unknown>(sets.length);
+    if (sets.length === 0) return results;
+
+    // Waits for every query of the lane before failing, so a connection is never released with queries still queued.
+    const run = async (runner: { query: Connection["query"] }, first: number, step: number) => {
+        const pending: Promise<void>[] = [];
+        for (let i = first; i < sets.length; i += step) {
+            const values = sets[i]!;
+            pending.push(runner.query(request.sql, values.length > 0 ? values : undefined).then((result) => {
+                results[i] = shape(op, result);
+            }));
+        }
+        const settled = await Promise.allSettled(pending);
+        for (const outcome of settled) if (outcome.status === "rejected") throw outcome.reason;
+    };
+
+    if (request.session != null) {
+        await run(target.sessions.Get(request.session), 0, 1);
+        return results;
+    }
+
+    // Lane n takes sets n, n + lanes, n + 2 * lanes, ...: interleaved, every lane works through the list together.
+    const lanes = Math.max(1, Math.min(target.lanes, Math.ceil(sets.length / setsPerLane)));
+    const work: Promise<void>[] = [];
+    for (let lane = 0; lane < lanes; lane++) {
+        work.push(target.pool.getConnection().then(async (connection) => {
+            try {
+                await run(connection, lane, lanes);
+            } finally {
+                connection.release();
+            }
+        }));
+    }
+    const settled = await Promise.allSettled(work);
+    for (const outcome of settled) if (outcome.status === "rejected") throw outcome.reason;
+    return results;
 }
 
 async function transact(pool: Pool, statements: Statement[]) {

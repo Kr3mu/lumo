@@ -26,6 +26,7 @@ function post(message: WorkerMessage) {
 const pool = createPool(workerData.config);
 const target = {
     pool,
+    lanes: workerData.config.connectionLimit ?? 10,
     // Kept apart so multipleStatements never applies to ordinary queries.
     multi: createPool({ ...workerData.config, multipleStatements: true, connectionLimit: 2 }),
     sessions: new Sessions(pool, workerData.checkoutTimeoutMs, (id, resource, heldMs) =>

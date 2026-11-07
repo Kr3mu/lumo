@@ -35,10 +35,29 @@ local function setup()
     Database.exec('CREATE TABLE lt_settings (player_id INT UNSIGNED NOT NULL, `key` VARCHAR(40) NOT NULL, value VARCHAR(100) NULL, PRIMARY KEY (player_id, `key`))')
 end
 
-local Players = Database.table('lt_players')
+local Players = Database.table('lt_players', { strict = true })
 local Inventory = Database.table('lt_inventory')
-local Settings = Database.table('lt_settings', { key = 'player_id' })
+local Settings = Database.table('lt_settings', { key = 'player_id', strict = true })
 local Loose = Database.table('lt_players', { strict = false })
+local Defined = Database.define('lt_defined', {
+    id         = 'id',
+    label      = 'string(20) index',
+    score      = 'int?',
+    kind       = 'enum(alpha, beta) = alpha',
+    active     = 'bool = true',
+    created_at = 'datetime = now',
+    updated_at = 'datetime = now on update now',
+})
+local DefinedChild = Database.define('lt_defined_child', {
+    id        = 'id',
+    parent_id = 'uint -> lt_defined.id cascade',
+    tag       = 'string(10)',
+}, { unique = { { 'parent_id', 'tag' } } })
+local DefinedPair = Database.define('lt_defined_pair', {
+    player_id = 'uint',
+    slot      = 'tinyint',
+    item      = 'string(30)',
+}, { primary = { 'player_id', 'slot' }, key = 'player_id' })
 
 local function writing()
     local id = Players:insert({ license = 'license:a', name = 'Alice', money = 100, kills = 5 })
@@ -133,6 +152,75 @@ local function strict(id)
     check('strict off: tables still work', (Loose:get(id) or {}).id == id)
 end
 
+local function defined()
+    local id = Defined:insert({ label = 'first' })
+    local row = Defined:get(id) or {}
+    check('define: the table exists on first use', type(id) == 'number' and row.label == 'first', row.label)
+    check('define: defaults and nullable columns', row.score == nil and row.kind == 'alpha' and row.active == 1
+        and type(row.created_at) == 'string' and type(row.updated_at) == 'string')
+
+    DefinedChild:insert({ parent_id = id, tag = 'a' })
+    raises('define: composite unique key', Database.Error.DUPLICATE_ENTRY, function() DefinedChild:insert({ parent_id = id, tag = 'a' }) end)
+    raises('define: foreign key', Database.Error.NO_REFERENCED_ROW, function() DefinedChild:insert({ parent_id = 999999, tag = 'b' }) end)
+    Defined:delete(id)
+    check('define: cascade deletes children', DefinedChild:count({ parent_id = id }) == 0)
+
+    DefinedPair:deleteWhere({ player_id = 1 })
+    DefinedPair:insert({ player_id = 1, slot = 1, item = 'bread' })
+    raises('define: composite primary key', Database.Error.DUPLICATE_ENTRY, function() DefinedPair:insert({ player_id = 1, slot = 1, item = 'water' }) end)
+
+    Wait(200)
+    local types = LoadResourceFile(GetCurrentResourceName(), 'lumo.d.lua') or ''
+    check('define: types written to lumo.d.lua', types:find('Lumo.Table.lt_defined_child', 1, true) ~= nil
+        and types:find("---@field kind 'alpha' | 'beta'", 1, true) ~= nil and types:find('---@field score integer?', 1, true) ~= nil
+        and types:find('---@field label string', 1, true) ~= nil)
+
+    raises('define: unknown type raises', Database.Error.BAD_ARGUMENT, function() Database.define('lt_bad', { a = 'integr' }) end)
+    raises('define: unknown option raises', Database.Error.BAD_ARGUMENT, function() Database.define('lt_bad', { a = 'int nullable' }) end)
+end
+
+local function each(id)
+    local licenses = Database.each('SELECT name FROM lt_players WHERE license = ?', {
+        { 'license:d' }, { 'license:nope' }, { 'license:b' },
+    }, 'value')
+    check('each: one value per set, in order, nil kept', licenses[1] == 'Dan' and licenses[2] == nil and licenses[3] == 'Bob' and #licenses == 3)
+
+    local rows = Database.each('SELECT id FROM lt_players WHERE kills = ?', { { 9 }, { 12345 } })
+    check('each: default shape is all rows', #rows[1] == 2 and #rows[2] == 0)
+
+    local sets = {}
+    for i = 1, 300 do sets[i] = { i } end
+    local echoed = Database.each('SELECT ? AS n', sets, 'value')
+    local inOrder = #echoed == 300
+    for i = 1, 300 do inOrder = inOrder and echoed[i] == i end
+    check('each: 300 sets over several lanes keep their order', inOrder)
+
+    local made = Database.each('INSERT INTO lt_inventory (player_id, item) VALUES (?, ?)', {
+        { id, 'each-a' }, { id, 'each-b' },
+    }, 'exec')
+    check('each: exec returns affected and insert id per set', made[1][1] == 1 and type(made[2][2]) == 'number' and made[2][2] > made[1][2])
+
+    check('each: Database.null in a set', Database.each('SELECT ? IS NULL', { { Database.null } }, 'value')[1] == 1)
+    check('each: no sets, no call', #Database.each('SELECT 1', {}) == 0)
+
+    Database.batch(function()
+        Database.each('UPDATE lt_inventory SET item = ? WHERE item = ?', { { 'each-c', 'each-a' }, { 'each-d', 'each-b' } }, 'exec')
+    end)
+    check('each: exec joins a batch', Inventory:count({ item = { 'each-c', 'each-d' } }) == 2)
+    raises('each: reads raise in a batch', Database.Error.READ_IN_BATCH, function()
+        Database.batch(function() Database.each('SELECT 1', { {} }, 'value') end)
+    end)
+
+    local seen = Database.transaction(function()
+        Database.exec('CREATE TEMPORARY TABLE lt_each_tmp (n INT)')
+        Database.each('INSERT INTO lt_each_tmp VALUES (?)', { { 1 }, { 2 } }, 'exec')
+        return Database.value('SELECT COUNT(*) FROM lt_each_tmp')
+    end)
+    check('each: runs on the transaction connection', seen == 2, seen)
+
+    raises('each: bad shape raises', Database.Error.BAD_ARGUMENT, function() Database.each('SELECT 1', { {} }, 'rows') end)
+end
+
 local function transactions(id)
     local left = Database.transaction(function()
         local p = Players:get(id, { lock = true })
@@ -222,7 +310,7 @@ local function strictCost()
         luaCost('insert 4 cols   loose', Loose, function(r, i) r:insert({ license = 'x', name = 'y', money = i, kills = 1 }) end)
     end
 
-    local fresh = Database.table('lt_settings', { key = 'key' })
+    local fresh = Database.table('lt_settings', { key = 'key', strict = true })
     local started = os.nanotime()
     fresh:count()
     local first = os.nanotime() - started
@@ -260,6 +348,8 @@ CreateThread(function()
         reading(id)
         rawSql(id)
         strict(id)
+        defined()
+        each(id)
         transactions(id)
         batches(id)
         sessions()

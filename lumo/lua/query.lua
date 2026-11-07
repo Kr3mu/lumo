@@ -28,5 +28,25 @@ return function(Bridge, Context, Errors)
         return result
     end
 
+    -- One statement, many parameter sets, one call into the bridge. In a batch, writes join it set by set.
+    ---@param shape integer
+    ---@param sql string
+    ---@param sets any[][]
+    ---@return any[] | nil one result per set, in order
+    function Query.each(shape, sql, sets)
+        local scope = Context.current()
+
+        if scope and scope.batch then
+            if shape ~= Query.RUN then
+                Errors.raise(Errors.codes.READ_IN_BATCH, 'reads cannot run inside Database.batch; read before the batch or use a transaction')
+            end
+            local batch = scope.batch
+            for i = 1, #sets do batch[#batch + 1] = { sql, sets[i] } end
+            return nil
+        end
+
+        return Bridge.call('each', shape, sql, sets, scope and scope.session)
+    end
+
     return Query
 end

@@ -38,7 +38,8 @@ export function Ready() {
 // Answers inline when the worker replies within the budget, else a promise of the answer. Never throws.
 export function Dispatch(req: Request): Answer | Promise<Answer> {
     const started = performance.now();
-    const inline = Settings.inlineBudgetMs > 0 && (req.batch == null || req.batch.length < inlineBatchLimit);
+    const many = req.batch?.length ?? (req.op.startsWith("each") ? (req.values?.length ?? 0) : 0);
+    const inline = Settings.inlineBudgetMs > 0 && many < inlineBatchLimit;
     if (!local || !Worker.Active() || !inline) return dispatchAsync(req, started);
 
     try {
@@ -75,7 +76,9 @@ function failed(req: Request, started: number, error: unknown): Answer {
 const logSqlLength = 240;
 
 function describe(req: Request) {
-    const sql = req.batch ? `BATCH (${req.batch.length}) ${req.batch.map((s) => s[0]).join("; ")}` : req.sql || req.op;
+    const sql = req.batch
+        ? `BATCH (${req.batch.length}) ${req.batch.map((s) => s[0]).join("; ")}`
+        : req.op.startsWith("each") ? `EACH (${req.values?.length ?? 0}) ${req.sql}` : req.sql || req.op;
     const text = sql.replace(/\s+/g, " ").trim();
     return text.length > logSqlLength ? `${text.slice(0, logSqlLength)}...` : text;
 }
@@ -118,5 +121,5 @@ async function connect(): Promise<Target> {
     const sessions = new Sessions(pool, Settings.checkoutTimeoutMs, (id, resource, heldMs) =>
         Log.Warn(`[lumo] Session ${id} of ${resource} timed out after ${heldMs.toFixed(0)}ms and was rolled back`),
     );
-    return { pool, sessions };
+    return { pool, sessions, lanes: workerStarted ? fallbackConnectionLimit : (configuration.connectionLimit ?? 10) };
 }

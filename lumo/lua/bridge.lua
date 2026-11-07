@@ -26,7 +26,7 @@ return function(Errors, host)
     end)
 
     -- The bridge answers [value] or [nil, err]; a slow answer is a promise the funcref call already awaited.
-    ---@param name 'exec' | 'batch' | 'checkout' | 'release' | 'ready'
+    ---@param name 'exec' | 'each' | 'batch' | 'checkout' | 'release' | 'ready'
     ---@return any
     function Bridge.call(name, ...)
         local reply = ref(name)(...)

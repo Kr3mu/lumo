@@ -1,11 +1,12 @@
 import type { Answer, Request } from "lib/server/database";
-import type { Op, Shape } from "lib/server/database/ops";
+import type { EachOp, Op, Shape } from "lib/server/database/ops";
 
 import * as Database from "lib/server/database";
 import * as Args from "./args";
 import { CodedError, ToLumoError } from "lib/server/database/errors";
 
 const shapes: readonly Shape[] = ["run", "one", "value", "all"];
+const eachShapes: readonly EachOp[] = ["eachRun", "eachOne", "eachValue", "eachAll"];
 const releaseModes: readonly Op[] = ["release", "commit", "rollback"];
 
 function caller() {
@@ -38,6 +39,15 @@ exports(
     guard((shape: unknown, sql: unknown, params: unknown, session: unknown) =>
         Database.Dispatch(
             request(pick(shapes, shape, "shape"), { sql: Args.Sql(sql), values: Args.Params(params), session: Args.Session(session) }),
+        ),
+    ),
+);
+
+exports(
+    "each",
+    guard((shape: unknown, sql: unknown, sets: unknown, session: unknown) =>
+        Database.Dispatch(
+            request(pick(eachShapes, shape, "shape"), { sql: Args.Sql(sql), values: Args.Sets(sets), session: Args.Session(session) }),
         ),
     ),
 );

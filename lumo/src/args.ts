@@ -28,6 +28,19 @@ function isNullMarker(value: unknown) {
     return typeof value === "object" && value !== null && "__lumo" in value && value.__lumo === "null";
 }
 
+// Parameter sets for one statement: an array of params arrays, each validated like Params.
+export function Sets(value: unknown): unknown[][] {
+    const list = value == null || (typeof value === "object" && !Array.isArray(value) && Object.keys(value).length === 0) ? [] : value;
+    if (!Array.isArray(list)) throw invalid("sets must be an array of params arrays");
+
+    return list.map((entry: unknown, i) => {
+        if (entry != null && !Array.isArray(entry) && !(typeof entry === "object" && Object.keys(entry).length === 0)) {
+            throw invalid(`set ${i + 1} must be a params array`);
+        }
+        return Params(entry) ?? [];
+    });
+}
+
 export function Session(value: unknown): number | null {
     if (value == null) return null;
     if (typeof value !== "number" || !Number.isInteger(value) || value <= 0) throw invalid("session must be a positive integer");

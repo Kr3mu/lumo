@@ -35,7 +35,12 @@ return function(Errors, Query, Sql, Strict)
         return repo
     end
 
+    -- Every method passes through here before it queries, so this is where a table from Database.define waits
+    -- for its CREATE TABLE. A failed create stays rejected and raises its error on every call.
     local function cached(self, key, build)
+        local pending = self.pending
+        if pending then Citizen.Await(pending) end
+
         local sql = self.cache[key]
         if not sql then
             sql = build()

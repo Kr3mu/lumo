@@ -31,6 +31,7 @@ local Bridge = part('bridge')(Errors, resource)
 local Query = part('query')(Bridge, Context, Errors)
 local Strict = part('strict')(Errors, Bridge, Sql)
 local Table = part('table')(Errors, Query, Sql, Strict)
+local Define = part('define')(Errors, Bridge, Sql, Table, part('typegen'), part('columns')(Errors, Sql))
 
 local Database = {}
 
@@ -48,24 +49,36 @@ function Database.table(name, options)
     return Table.get_table(name, options)
 end
 
+-- Declares a table in code: created if missing, typed for the editor in this resource's lumo.d.lua.
+---@param name string table name
+---@param columns table<string, string> column = shorthand: { id = 'id', owner = 'string(60) unique', note = 'string(100)?' }
+---@param options { key?: string, strict?: boolean, primary?: string[], indexes?: (string | string[])[], unique?: (string | string[])[] } | nil
+function Database.define(name, columns, options)
+    return Define.define(name, columns, options)
+end
+
 ---@param sql string raw SQL with ? placeholders
 ---@return table | nil first row
 function Database.one(sql, ...)
+    Define.wait()
     return Query.send(ONE, sql, Sql.pack(...))
 end
 
 ---@return table[] rows
 function Database.all(sql, ...)
+    Define.wait()
     return Query.send(ALL, sql, Sql.pack(...))
 end
 
 ---@return any first column of the first row
 function Database.value(sql, ...)
+    Define.wait()
     return Query.send(VALUE, sql, Sql.pack(...))
 end
 
 ---@return integer | nil affected, integer | nil insertId
 function Database.exec(sql, ...)
+    Define.wait()
     return Query.send(RUN, sql, Sql.pack(...))
 end
 
@@ -149,13 +162,35 @@ function Database.async(fn, ...)
     return p
 end
 
+local eachShapes = { all = ALL, one = ONE, value = VALUE, exec = RUN }
+
+-- One statement run once per parameter set, in a single call: the bridge pipelines the sets over a few connections.
+---@param sql string raw SQL with ? placeholders
+---@param sets any[][] one params array per run, e.g. { { 'license:a' }, { 'license:b' } }
+---@param shape 'all' | 'one' | 'value' | 'exec' | nil what each run returns, like the matching Database call (default 'all')
+---@return any[] one result per set, in order; for 'exec' each is { affected, insertId }
+function Database.each(sql, sets, shape)
+    Define.wait()
+    local id = eachShapes[shape or 'all']
+    if not id then
+        Errors.raise(Errors.codes.BAD_ARGUMENT, ("Database.each: shape must be 'all', 'one', 'value' or 'exec', got %s"):format(tostring(shape)))
+    end
+    if type(sets) ~= 'table' then
+        Errors.raise(Errors.codes.BAD_ARGUMENT, 'Database.each needs a list of parameter sets')
+    end
+    if #sets == 0 then return {} end
+    return Query.each(id, sql, Sql.sets(sets))
+end
+
 ---@return true once the bridge has its first connection
 function Database.ready()
+    Define.wait()
     return Bridge.call('ready')
 end
 
 -- Included from a manifest there is no require to hand the module to, so it becomes this resource's
 -- `Database`. Each resource has its own Lua state, so this never reaches another resource.
-if not requiredAs then _ENV.Database = Database end
+-- The casts point the editor at types/lumo.lua and types/schema.lua instead of this file's untyped table.
+if not requiredAs then _ENV.Database = Database --[[@as Lumo.Database]] end
 
-return Database
+return Database --[[@as Lumo.Database]]
