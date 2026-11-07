@@ -3,6 +3,10 @@
 </p>
 
 <p align="center">
+  <a href="https://lumo.kr3mu.dev"><b>Documentation: lumo.kr3mu.dev</b></a>
+</p>
+
+<p align="center">
   A MariaDB driver for FiveM. Tables are Lua objects, everyday reads and writes need no SQL,<br>
   and every query costs exactly one call into the driver.
 </p>
@@ -144,7 +148,7 @@ if not ok and err.code == 1062 then print('tag taken') end
 | `Database.ready()`, `Database.null`, `Database.all_rows` | |
 
 `where` tables match by equality (joined with AND); an array value becomes `IN (…)` and `Database.null` matches
-`NULL`. The full documentation lives in `docs/` (`cd docs && bun install && bun run dev`).
+`NULL`. The full documentation is at [lumo.kr3mu.dev](https://lumo.kr3mu.dev); its source is in `docs/` (`cd docs && bun install && bun run dev`, deploy with `bun run deploy`).
 
 ## Configuration
 
