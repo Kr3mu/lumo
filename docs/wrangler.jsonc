@@ -1,0 +1,14 @@
+// Cloudflare Workers static site for the docs at lumo.kr3mu.dev.
+// `bun run deploy` builds dist/ and uploads it; the custom_domain route makes Cloudflare create the DNS record
+// and the certificate for lumo.kr3mu.dev (kr3mu.dev must be a zone on the same Cloudflare account).
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "lumo-docs",
+  "compatibility_date": "2026-10-01",
+  "assets": {
+    "directory": "./dist"
+  },
+  "routes": [
+    { "pattern": "lumo.kr3mu.dev", "custom_domain": true }
+  ]
+}

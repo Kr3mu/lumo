@@ -4,11 +4,13 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "vite build && bun scripts/artifact.ts"
+    "build": "vite build && bun scripts/artifact.ts",
+    "deploy": "bun run build && wrangler deploy"
   },
   "devDependencies": {
     "@sveltejs/vite-plugin-svelte": "5",
     "svelte": "5",
-    "vite": "6"
+    "vite": "6",
+    "wrangler": "4.158.0"
   }
 }
