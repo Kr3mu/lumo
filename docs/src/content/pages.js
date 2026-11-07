@@ -63,6 +63,12 @@ export const pages = {
                 { title: "Declare a table and use it", s: "Tables are usually declared at the top of a module and used from event handlers.", lang: "lua", code: "-- server/players.lua\nlocal Database = require '@lumo'\nlocal Players = Database.table('players')\n\nCreateThread(function()\n    Database.ready()\n    print(('%d players in the database'):format(Players:count()))\nend)" },
             ] },
             { t: "note", kind: "tip", s: "Keep `ensure lumo` above the resources that use it. Calls made before Lumo has connected wait for the connection instead of failing; see [Database.ready](#api-db)." },
+            { t: "h2", id: "monorepo", s: "Inside a monorepo resource" },
+            { t: "p", s: "If your server is one big resource with everything inside (a `core` resource with modules under it), copy the `lumo` folder into it, for example to `core/lib/lumo/`, and load the driver from your own manifest. The Lua module finds its own files and talks to the driver in the same resource; nothing else changes." },
+            { t: "code", lang: "lua", title: "core/fxmanifest.lua", s: "fx_version 'cerulean'\ngame 'gta5'\nlua54 'yes'\nnode_version '22'\n\nshared_script '@ox_lib/init.lua'\nserver_scripts {\n    'lib/lumo/dist/server.js',   -- the Lumo driver, running inside core\n    'server/init.lua',\n}" },
+            { t: "code", lang: "cfg", title: "server.cfg", s: "set lumo_connection_string \"mysql://lumo:secret@127.0.0.1/fivem\"\nadd_unsafe_worker_permission core\nensure core" },
+            { t: "code", lang: "lua", title: "core/server/players.lua", s: "local Database = require 'lib.lumo'   -- a path inside core, not '@lumo'\nlocal Players = Database.table('players')" },
+            { t: "note", kind: "info", s: "`require '@lumo'` means \"the lumo resource\"; a plain path like `'lib.lumo'` means \"this resource\". In both cases every query is still one call into the driver." },
         ],
     },
 
