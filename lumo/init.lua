@@ -1,13 +1,21 @@
--- Lumo: the Database module. FiveM has no built-in require; resources get one from ox_lib
--- (`shared_script '@ox_lib/init.lua'`), which loads this file into the requiring resource. Two layouts work:
---   its own resource:   local Database = require '@lumo'        -- driver runs in the lumo resource
---   inside a monorepo:  local Database = require 'lib.lumo'     -- driver runs in this same resource
--- The loader passes the module name as `...`. From it Lumo finds the resource and folder it lives in, loads its
--- own parts with LoadResourceFile (so nothing past this file depends on require), and finds the driver's host.
-local name = ... or '@lumo'
-local resource, path = name:match('^@([^%.]+)%.?(.*)$')
-if not resource then resource, path = GetCurrentResourceName(), name end
-local folder = path ~= '' and (path:gsub('%.', '/') .. '/') or ''
+-- Lumo: the Database module. One file, two ways to load it:
+--   with ox_lib's require:   local Database = require '@lumo'      (or require 'lib.lumo' inside a monorepo)
+--   with no dependencies:    server_script '@lumo/init.lua'        (or 'lib/lumo/init.lua'), then use Database
+-- FiveM has no built-in require, so the second way is the manifest include FiveM supports natively.
+-- Either way this file runs inside the resource that loads it. It finds its own resource and folder from its
+-- chunk name ('@@lumo/init.lua', '@@core/lib/lumo/init.lua'), which is the same in both modes, and loads its
+-- other parts with LoadResourceFile, so nothing past this file needs require.
+-- require passes the module name; FiveM runs a manifest script with a number as its argument.
+local requiredAs = ...
+if type(requiredAs) ~= 'string' then requiredAs = nil end
+local resource, folder = debug.getinfo(1, 'S').source:match('^@@([^/]+)/(.-)init%.lua$')
+if not resource then
+    local name = requiredAs or '@lumo'
+    local path
+    resource, path = name:match('^@([^%.]+)%.?(.*)$')
+    if not resource then resource, path = GetCurrentResourceName(), name end
+    folder = path ~= '' and (path:gsub('%.', '/') .. '/') or ''
+end
 
 local function part(file)
     local file_path = folder .. 'lua/' .. file .. '.lua'
@@ -31,6 +39,7 @@ local pcall, error = pcall, error
 
 Database.null = Sql.NULL
 Database.all_rows = Sql.ALL_ROWS
+Database.Error = Errors.codes
 
 ---@param name string table name
 ---@param options { key?: string } | nil primary key column, default 'id'
@@ -143,5 +152,9 @@ end
 function Database.ready()
     return Bridge.call('ready')
 end
+
+-- Included from a manifest there is no require to hand the module to, so it becomes this resource's
+-- `Database`. Each resource has its own Lua state, so this never reaches another resource.
+if not requiredAs then _ENV.Database = Database end
 
 return Database

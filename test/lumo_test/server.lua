@@ -1,7 +1,8 @@
 -- Runs every documented Lumo behaviour against the database in lumo_connection_string, prints PASS/FAIL per
 -- check and a summary, then stops the server when lumo_test_quit is true. Uses its own lt_* tables.
--- '@lumo' tests the standalone resource; set lumo_test_module to a path like 'lib.lumo' to test an embedded copy.
-local Database = require(GetConvar('lumo_test_module', '@lumo'))
+-- With ox_lib: '@lumo' tests the standalone resource, lumo_test_module 'lib.lumo' an embedded copy.
+-- Without ox_lib the manifest includes '@lumo/init.lua', which already defined Database.
+local Database = Database or require(GetConvar('lumo_test_module', '@lumo'))
 
 local passed, failed = 0, 0
 
@@ -103,6 +104,7 @@ local function rawSql(id)
 
     local ok, err = pcall(Players.insert, Players, { license = 'license:a', name = 'Dup' })
     check('duplicate key raises code 1062', not ok and err.code == 1062, err)
+    check('error enum names the code', not ok and err.code == Database.Error.DUPLICATE_ENTRY and err.name == 'DUPLICATE_ENTRY', err)
     check('errors print readably', not ok and tostring(err):find('1062', 1, true) ~= nil, tostring(err))
 end
 
