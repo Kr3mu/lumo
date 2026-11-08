@@ -124,7 +124,7 @@ export const pages = {
 
     define: {
         title: "Defining tables",
-        lede: "Declare a table in your code with `Database.define`. Lumo creates it if it is missing and writes Lua types for it, so your editor knows every column and flags a misspelled column or a wrong value while you type.",
+        lede: "Declare a table in your code with `Database.define`. Lumo creates it if it is missing, keeps the live table in step when you change the definition, and writes Lua types for it, so your editor knows every column and flags a misspelled column or a wrong value while you type.",
         blocks: [
             { t: "code", lang: "lua", title: "server/bank.lua", s: "local Accounts = Database.define('bank_accounts', {\n    id         = 'id',\n    owner      = 'string(60) unique',\n    balance    = 'int = 0',\n    frozen     = 'bool = false',\n    created_at = 'datetime = now',\n})\n\nlocal Transactions = Database.define('bank_transactions', {\n    id         = 'id',\n    account_id = 'uint -> bank_accounts.id cascade',\n    amount     = 'int',\n    kind       = 'enum(deposit, withdraw, transfer_in, transfer_out)',\n    note       = 'string(100)?',\n    created_at = 'datetime = now',\n})" },
             { t: "p", s: "Each column is `name = 'type options'`. Columns are NOT NULL unless the type ends in `?`. `Database.define` returns the same table object as `Database.table`, so everything in [Reading](#reading) and [Writing](#writing) works on it." },
@@ -171,7 +171,35 @@ export const pages = {
             { t: "code", lang: "lua", title: "houses: SQL for the parts the shorthand doesn't cover", s: "local Houses = Database.define('houses', {\n    id       = 'id',\n    label    = 'string(60)',\n    price    = 'decimal(12, 2)',\n    owner_id = 'uint? -> players.id nullify',\n    entrance = 'sql: POINT NOT NULL',\n    interior = \"enum('shell_small', 'shell_medium', 'mlo') = shell_small\",\n})" },
             { t: "h2", id: "create", s: "Creating the table" },
             { t: "p", s: "`Database.define` returns the table object at once. In the background Lumo runs `CREATE TABLE IF NOT EXISTS`, one definition after another in the order they ran, so a foreign key can point at a table defined above it. A call on the table waits until it exists, so you can define tables at the top of a file and use them anywhere. Columns are created with the primary key first and the rest in name order." },
-            { t: "note", kind: "info", s: "`CREATE TABLE IF NOT EXISTS` never changes a table that already exists. To add or change a column on a live server, run an `ALTER TABLE` yourself and update the definition to match." },
+            { t: "h2", id: "changing", s: "Changing a table" },
+            { t: "p", s: "A definition stays the one description of its table. Every start compares it with the live table and applies the difference, so you edit the definition and `restart`." },
+            {
+                t: "table",
+                head: ["Change in the definition", "What happens"],
+                rows: [
+                    ["Add a column", "Added, with its foreign key and indexes"],
+                    ["Remove a column", "Dropped, along with its data"],
+                    ["Change a type", "Changed, unless the existing data doesn't fit"],
+                    ["Change nullable", "Changed, unless going NOT NULL with NULL rows present"],
+                    ["Rename a column", "Renamed, keeping its data, when the type identifies it"],
+                ],
+            },
+            { t: "p", s: "Each change that's applied prints a yellow line. One that can't be applied prints a red line with the reason, that column stays as it was, and the resource keeps starting. Changes run in strict mode, so MariaDB refuses anything that would cut data off, like shrinking `string(50)` to `string(5)` while a longer value exists." },
+            { t: "note", kind: "warning", s: "Removing a column from a definition deletes its data on the next start. Strict mode doesn't stop rounding either, so `float` to `int` keeps the whole number and loses the decimals. Removing a column that has a foreign key is refused and needs a migration." },
+            { t: "p", s: "A rename looks like one column gone and one new. When exactly one of each has the same type, it counts as a rename. Rename and change the type in separate restarts, because with a different type the old column is dropped and the new one starts empty. Two renames of the same type at once are ambiguous, so the old columns stay and a red line says to rename one at a time. `sql:` columns have no type to compare, so they're never changed or renamed." },
+            { t: "code", lang: "lua", title: "", s: "-- Before\nDatabase.define('notes', { id = 'id', label = 'string(33)' })\n\n-- After: label becomes title and keeps its data\nDatabase.define('notes', { id = 'id', title = 'string(33)' })" },
+            { t: "h2", id: "migrations", s: "Migrations" },
+            { t: "p", s: "For what a definition can't express, like moving data between columns or dropping a column that has a foreign key, put numbered SQL files in `migrations/` at the root of your resource: `0001.sql`, `0002.sql` and so on. They run once each, in order, before the first definition, and the applied numbers are kept in `lumo_migrations`." },
+            { t: "code", lang: "sql", title: "migrations/0001.sql", s: "-- Split full names into the new columns\nUPDATE characters SET last_name = SUBSTRING_INDEX(full_name, ' ', -1);\nUPDATE characters SET first_name = SUBSTRING_INDEX(full_name, ' ', 1);" },
+            {
+                t: "list",
+                items: [
+                    "Numbers can't have gaps. A resource can't list a folder, so counting stops at the first missing number.",
+                    "End each statement with `;` and a new line, which is how a file is split into statements.",
+                    "On an empty database they're marked as done without running, because the definitions build the newest shape there.",
+                ],
+            },
+            { t: "note", kind: "warning", s: "If a migration fails it isn't marked as done, no definitions run, and database calls raise the error, so nothing builds on a half-changed schema. Fix the file and restart. A file that fails partway has already applied its earlier statements, so write them to be safe to repeat, or keep one change per file." },
             { t: "h2", id: "types-file", s: "Editor types" },
             { t: "p", s: "When the tables exist, Lumo writes `lumo.d.lua` at the root of your resource with Lua types built from the definitions. This happens every time the resource starts, and the file is only rewritten when a definition changed. Open the resource in VS Code with a Lua language server and every table is typed:" },
             { t: "code", lang: "lua", title: "", s: "local a = Accounts:find({ owner = license })\na.balance                                     -- integer\na.balanse                                     -- Field `balanse` is not declared in `Lumo.Row.bank_accounts`\n\nAccounts:find({ ownr = license })             -- Field `ownr` is not declared in strict class `Lumo.Where.bank_accounts`\nAccounts:find({ owner = 42 })                 -- Cannot assign `integer` to field `owner`\nAccounts:update(id, { balance = 'lots' })     -- Cannot assign `string` to field `balance`\nAccounts:insert({ balance = 5 })              -- Missing required fields: `owner`\nAccounts:list({ columns = { 'ballance' } })   -- Cannot assign `\"ballance\"` to `Lumo.Column.bank_accounts`\nTransactions:insert({ kind = 'refund', ... }) -- Cannot assign `\"refund\"` to field `kind` of type `\"deposit\"|\"withdraw\"|\u2026`" },
@@ -401,7 +429,7 @@ export const pages = {
         title: "Database",
         lede: "The module `@lumo/init.lua` defines (or `require '@lumo'` returns). Every Lumo call starts here.",
         blocks: [
-            { t: "api", name: "Database.define", sig: "Database.define(name, columns, options?)", calls: 0, returns: "Table", s: "Declares a table in code: creates it with `CREATE TABLE IF NOT EXISTS` (calls on it wait until it exists) and writes its Lua types to `lumo.d.lua` in this resource. See [Defining tables](#define).", params: [{ name: "name", type: "string", s: "table name, `[A-Za-z0-9_]` only" }, { name: "columns", type: "table", s: "`column = 'type options'`, e.g. `{ id = 'id', owner = 'string(60) unique', note = 'string(100)?' }`" }, { name: "options", type: "table", s: "`key` and `strict` as for `Database.table`, plus `primary`, `indexes` and `unique` for keys over several columns" }] },
+            { t: "api", name: "Database.define", sig: "Database.define(name, columns, options?)", calls: 0, returns: "Table", s: "Declares a table in code: creates it if it's missing, changes a live table to match (calls on it wait until it's ready) and writes its Lua types to `lumo.d.lua` in this resource. See [Defining tables](#define).", params: [{ name: "name", type: "string", s: "table name, `[A-Za-z0-9_]` only" }, { name: "columns", type: "table", s: "`column = 'type options'`, e.g. `{ id = 'id', owner = 'string(60) unique', note = 'string(100)?' }`" }, { name: "options", type: "table", s: "`key` and `strict` as for `Database.table`, plus `primary`, `indexes` and `unique` for keys over several columns" }] },
             { t: "api", name: "Database.table", sig: "Database.table(name, options?)", calls: 0, returns: "Table", s: "Returns the repository for a table, creating it on first use. One object per table name per resource.", params: [{ name: "name", type: "string", s: "table name, `[A-Za-z0-9_]` only" }, { name: "options.key", type: "string", s: "primary key column, default `'id'`" }, { name: "options.strict", type: "boolean", s: "check calls against the table's columns; defaults to `lumo_strict` (false). See [Strict mode](#strict)" }] },
             { t: "api", name: "Database.one", sig: "Database.one(sql, ...)", calls: 1, returns: "row | nil", s: "Runs raw SQL and returns the first row." },
             { t: "api", name: "Database.all", sig: "Database.all(sql, ...)", calls: 1, returns: "{ row }", s: "Runs raw SQL and returns every row." },

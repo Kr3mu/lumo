@@ -33,9 +33,10 @@ Most of the time in a FiveM database call is not spent in the database. A small 
 - **Transactions done right.** `Database.transaction(fn)` pins one connection to your function, commits on return and
   rolls back on error. `Database.batch(fn)` sends many writes as one multi-statement round trip.
 - **SQL when you need it.** Joins, aggregates and reports use `Database.one`, `all`, `value` and `exec`.
-- **Tables defined in code.** `Database.define` creates the table and writes Lua types from the definition, so the
-  editor knows each column and its type and flags `Players:find({ licnese = l })` or `{ money = 'lots' }` while you
-  type. Optional runtime checks (`set lumo_strict true`, about 1 µs a call) cover values the editor can't see.
+- **Tables defined in code.** `Database.define` creates the table, keeps the live table in step when the definition
+  changes, and writes Lua types from it, so the editor knows each column and its type and flags
+  `Players:find({ licnese = l })` or `{ money = 'lots' }` while you type. Optional runtime checks
+  (`set lumo_strict true`, about 1 µs a call) cover values the editor can't see.
 - **Safe by construction.** Values are always bound; column names are checked; `orderBy` only accepts
   `column [ASC|DESC]`; a write with an empty filter refuses to touch every row.
 
