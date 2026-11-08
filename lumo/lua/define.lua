@@ -1,7 +1,8 @@
 -- Database.define: a table declared in code. Lumo creates it if it is missing (CREATE TABLE IF NOT EXISTS, in the
--- order the definitions run, so foreign keys can point at earlier tables) and writes lumo.d.lua at the root of this
--- resource with LuaLS types for every definition. Calls on a table wait until it exists.
-return function(Errors, Bridge, Sql, Table, Typegen, Columns)
+-- order the definitions run, so foreign keys can point at earlier tables), adds any columns the live table lacks, and
+-- writes lumo.d.lua at the root of this resource with LuaLS types for every definition. Calls on a table wait until
+-- it's ready.
+return function(Errors, Bridge, Sql, Table, Typegen, Columns, Sync, Migrate)
     local Define = {}
 
     -- At the resource root: SaveResourceFile can't create folders.
@@ -10,6 +11,8 @@ return function(Errors, Bridge, Sql, Table, Typegen, Columns)
     local definitions, byName = {}, {}
     local queue = {}
     local running = false
+    local migrated = false
+    local failure
     local busy
 
     local function createSql(name, entries)
@@ -33,14 +36,29 @@ return function(Errors, Bridge, Sql, Table, Typegen, Columns)
         end
     end
 
+    local function createOrSync(job)
+        Bridge.call('exec', 0, job.sql)
+        Sync.run(job.name, job.entries)
+    end
+
     -- One thread works through the queue; a define made while it runs joins the same pass.
     local function run()
         Bridge.call('ready')
 
+        if not migrated then
+            migrated = true
+            local ok, err = pcall(Migrate.run)
+            if not ok then
+                failure = err
+                print(('^1[lumo] a migration failed, so no tables were created or changed: %s^7'):format(tostring(err)))
+            end
+        end
+
         local i = 1
         while queue[i] do
             local job = queue[i]
-            local ok, err = pcall(Bridge.call, 'exec', 0, job.sql)
+            local ok, err = false, failure
+            if not failure then ok, err = pcall(createOrSync, job) end
             if ok then
                 job.repo.pending = nil
                 job.promise:resolve(true)
@@ -62,6 +80,7 @@ return function(Errors, Bridge, Sql, Table, Typegen, Columns)
     -- Raw SQL can name a defined table too, so it waits for every pending definition in this resource.
     function Define.wait()
         if busy then Citizen.Await(busy) end
+        if failure then error(failure, 0) end
     end
 
     ---@param name string
@@ -83,7 +102,7 @@ return function(Errors, Bridge, Sql, Table, Typegen, Columns)
 
         local done = promise.new()
         repo.pending = done
-        queue[#queue + 1] = { name = name, sql = sql, repo = repo, promise = done }
+        queue[#queue + 1] = { name = name, sql = sql, entries = entries, repo = repo, promise = done }
 
         if not running then
             running = true

@@ -125,7 +125,7 @@ return function(Errors, Sql)
             rest = trim(after)
         end
 
-        return { sql = concat(parts, ' '), primary = primary, constraints = constraints }
+        return { sql = concat(parts, ' '), columnType = parts[1], primary = primary, constraints = constraints }
     end
 
     local function keyList(names)
@@ -161,7 +161,7 @@ return function(Errors, Sql)
         local entries, constraints = {}, {}
         for _, name in ipairs(names) do
             local column = compiled[name]
-            entries[#entries + 1] = { name, column.sql }
+            entries[#entries + 1] = { name, column.sql, column.columnType }
             for _, constraint in ipairs(column.constraints) do constraints[#constraints + 1] = constraint end
         end
 

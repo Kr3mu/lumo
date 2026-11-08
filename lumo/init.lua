@@ -31,7 +31,7 @@ local Bridge = part('bridge')(Errors, resource)
 local Query = part('query')(Bridge, Context, Errors)
 local Strict = part('strict')(Errors, Bridge, Sql)
 local Table = part('table')(Errors, Query, Sql, Strict)
-local Define = part('define')(Errors, Bridge, Sql, Table, part('typegen'), part('columns')(Errors, Sql))
+local Define = part('define')(Errors, Bridge, Sql, Table, part('typegen'), part('columns')(Errors, Sql), part('sync')(Bridge, Query), part('migrate')(Bridge, Query))
 
 local Database = {}
 
