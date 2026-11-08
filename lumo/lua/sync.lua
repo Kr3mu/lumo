@@ -1,5 +1,6 @@
 -- Brings an existing table up to its Database.define: columns are added, renamed, changed and dropped to match.
--- Every change runs in strict mode, so one that would cut data off fails and leaves the column as it was.
+-- Every change runs in strict mode, so one that would cut text off fails and leaves the column as it was. Strict mode
+-- still lets a number round, so that's refused here, along with a required column that would fill rows with fake zeroes.
 return function(Bridge, Query)
     local Sync = {}
 
@@ -90,11 +91,25 @@ return function(Bridge, Query)
         return renames, renamed, kept
     end
 
+    local function needsValue(definition)
+        return not isNullable(definition) and not definition:find(" DEFAULT ", 1, true) and not definition:find("AUTO_INCREMENT", 1, true)
+    end
+
+    -- Rounds or drops part of what's stored, without strict mode objecting.
+    local function mayRound(from, to)
+        if normalize(from) == normalize(to) then return false end
+        local text = from:lower()
+        return text:find("^float") or text:find("^double") or text:find("^decimal") or text:find("^datetime") or text:find("^timestamp")
+    end
+
     local function addColumns(tableName, entries, added, renamed)
         local changes, names, isNew = {}, {}, {}
+        local hasRows = Bridge.call("exec", Query.VALUE, ("SELECT 1 FROM `%s` LIMIT 1"):format(tableName)) ~= nil
         for i = 1, #added do
             local name = added[i][1]
-            if not renamed[name] then
+            if not renamed[name] and hasRows and needsValue(added[i][2]) then
+                print(("^1[lumo] %s: %s is NOT NULL with no default and the table has rows. Add it nullable, fill it in a migration, then make it NOT NULL^7"):format(tableName, name))
+            elseif not renamed[name] then
                 isNew[name] = true
                 names[#names + 1] = name
                 changes[#changes + 1] = ("ADD COLUMN `%s` %s"):format(name, added[i][2])
@@ -132,7 +147,9 @@ return function(Bridge, Query)
                 if column then
                     live[entry[1]] = nil
                     local found = differences(entry, column)
-                    if #found > 0 then
+                    if entry[3] and mayRound(column.columnType, entry[3]) then
+                        print(("^1[lumo] %s: changing %s from %s to %s would round what's stored, so it stays. Do it in a migration^7"):format(tableName, entry[1], column.columnType, entry[3]))
+                    elseif #found > 0 then
                         alter(tableName, ("MODIFY COLUMN `%s` %s"):format(entry[1], withoutKeys(entry[2])), table.concat(found, ", "))
                     end
                 else

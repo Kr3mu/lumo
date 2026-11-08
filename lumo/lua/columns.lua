@@ -168,6 +168,14 @@ return function(Errors, Sql)
         if options then
             if options.primary then constraints[#constraints + 1] = 'PRIMARY KEY ' .. keyList(options.primary) end
             for _, index in ipairs(options.indexes or {}) do constraints[#constraints + 1] = 'KEY ' .. keyList(index) end
+            for _, foreign in ipairs(options.foreign or {}) do
+                constraints[#constraints + 1] = ('FOREIGN KEY %s REFERENCES `%s` %s%s'):format(
+                    keyList(foreign.columns),
+                    foreign.parent,
+                    keyList(foreign.references),
+                    foreign.action and (' ON DELETE ' .. foreign.action) or ''
+                )
+            end
             for _, index in ipairs(options.unique or {}) do constraints[#constraints + 1] = 'UNIQUE KEY ' .. keyList(index) end
         end
 
