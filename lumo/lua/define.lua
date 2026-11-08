@@ -1,6 +1,6 @@
 -- Database.define: a table declared in code. Lumo creates it if it is missing (CREATE TABLE IF NOT EXISTS, in the
--- order the definitions run, so foreign keys can point at earlier tables), adds any columns the live table lacks, and
--- writes lumo.d.lua at the root of this resource with LuaLS types for every definition. Calls on a table wait until
+-- order the definitions run, so foreign keys can point at earlier tables), brings a live table's columns up to the
+-- definition (added, changed, renamed and dropped, see sync.lua), and writes lumo.d.lua at the root of this resource with LuaLS types for every definition. Calls on a table wait until
 -- it's ready.
 return function(Errors, Bridge, Sql, Table, Typegen, Columns, Sync, Migrate)
     local Define = {}
