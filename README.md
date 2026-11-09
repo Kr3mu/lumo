@@ -249,3 +249,8 @@ cd brand && python build_kit.py              # logo SVGs → brand/kit
 | `test/` | end-to-end suite, setup SQL, example server config |
 | `docs/` | documentation site (Svelte 5 + Vite) |
 | `brand/` | logo kit and the scripts that build it; Outfit font under the SIL OFL |
+
+## License
+
+MIT, see [LICENSE](LICENSE). The Outfit font in `brand/fonts` is by its own authors under the SIL Open Font License
+(`brand/fonts/OFL.txt`).
