@@ -1,5 +1,8 @@
 <p align="center">
-  <img src="brand/kit/lumo-horizontal.svg" alt="Lumo" width="360">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="brand/kit/lumo-horizontal-dark-transparent.svg">
+    <img src="brand/kit/lumo-horizontal.svg" alt="Lumo" width="360">
+  </picture>
 </p>
 
 <p align="center">
