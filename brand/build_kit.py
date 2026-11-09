@@ -113,6 +113,7 @@ H_X, H_Y = 262, 216 - 150
 H_W = round(H_X + WM_W * H_SCALE + 20)
 write("lumo-horizontal.svg", svg(H_W, 256, firefly(NAVY, GLOW, HALO, WING) + placed(NAVY, H_X, H_Y, H_SCALE), "Lumo"))
 write("lumo-horizontal-dark.svg", svg(H_W, 256, firefly(DARK_BODY, GLOW, DARK_HALO, DARK_WING) + placed(DARK_BODY, H_X, H_Y, H_SCALE), "Lumo", DARK_BG))
+write("lumo-horizontal-dark-transparent.svg", svg(H_W, 256, firefly(DARK_BODY, GLOW, DARK_HALO, DARK_WING) + placed(DARK_BODY, H_X, H_Y, H_SCALE), "Lumo"))
 
 # Stacked lockup: symbol centred above the wordmark, word slightly narrower than the symbol's halo.
 S_SCALE = 210 / WM_W
